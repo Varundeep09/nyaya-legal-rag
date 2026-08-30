@@ -1,0 +1,39 @@
+# Environment secrets
+.env
+*.env
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+
+# Node.js dependencies & build outputs
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data artifacts & PDFs (Keep directory structure via .gitkeep)
+data/raw/*.pdf
+data/forms/*
+!data/forms/.gitkeep
+!data/raw/.gitkeep
+
+# Evaluation output results
+eval/results/*.json
+!eval/results/.gitkeep
+
+# Operating system & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

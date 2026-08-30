@@ -1,0 +1,43 @@
+# Pinned backend dependencies for Nyaya Legal Assistant
+
+# FastAPI & Web Framework
+fastapi==0.115.8
+uvicorn==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+sse-starlette==2.2.1
+
+# Database (PostgreSQL + pgvector)
+SQLAlchemy==2.0.38
+psycopg2-binary==2.9.10
+asyncpg==0.30.0
+pgvector==0.3.6
+
+# Sparse Retrieval
+rank-bm25==0.2.2
+
+# Task Queue (Redis + arq)
+redis==5.2.1
+arq==0.26.1
+
+# Embeddings & Machine Learning
+sentence-transformers==3.4.1
+torch==2.6.0
+
+# LLM Providers
+google-generativeai==0.8.4
+httpx==0.28.1
+
+# PDF Parsing & Form Extraction
+pdfplumber==0.11.5
+PyMuPDF==1.25.3
+
+# Evaluation & Observability
+prometheus-client==0.21.1
+
+# Testing & Code Quality
+pytest==8.3.4
+pytest-asyncio==0.25.3
+black==25.1.0
+ruff==0.9.6
+mypy==1.15.0
