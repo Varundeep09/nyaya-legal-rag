@@ -15,3 +15,14 @@ As required by the specification brief ("Your parser must key off what is actual
 - **Literal Act Metadata Extraction**: Chunks extracted from pages 1–189 are labeled with metadata `act: "Bharatiya Nagarik Suraksha Sanhita, 2023"` and `act_short: "BNSS"`.
 - **First Schedule Classification Matrix**: The offence classification schedule (pages 158–189) is parsed as structured relational data and indexed as an explicit citation source (`BNSS Sched-1`).
 - **Second Schedule Statutory Forms**: The form extraction pipeline extracts Form 1 through Form 58 from pages 190–249, scraping exact titles printed on the pages (e.g. `FORM-1_NOTICE-FOR-APPEARANCE-BY-THE-POLICE.pdf`), recording `enabling_section` (e.g. `35(3)`), and preserving multi-page form continuity (such as Form No. 33 across pages 222–224).
+
+---
+
+### Database Schema Initialization Trade-off (Direct `create_all` vs Alembic)
+
+#### Decision
+For database table creation and pgvector extension enabling during application startup, we utilize `conn.run_sync(Base.metadata.create_all)` inside an async lifespan context manager rather than configuring full Alembic migration scripts (`alembic/versions`).
+
+#### Justification & Trade-off
+- **Speed & Simplicity**: In a 4-day hiring technical assignment, setting up Alembic migration scripts adds boilerplate overhead without adding functionality. `Base.metadata.create_all` ensures clean, immediate table creation on a fresh container boot.
+- **Production Path**: In a real production deployment post-assignment, schema evolution would be managed via Alembic migration scripts (`alembic revision --autogenerate -m "feat: async db layer"`).
