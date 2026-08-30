@@ -1,13 +1,14 @@
 """
 Structure-aware legal parser and chunker for narrative BNSS text (pages 1-157).
-Extracts chapters, sections, sub-sections, provisos, illustrations, explanations, and cross-references.
+Implements greedy atom-packing to ensure section atomicity, preserving provisos,
+explanations, and illustrations attached to their parent clauses.
 """
 
 import re
 from typing import List, Dict, Any, Tuple, Optional
 import pdfplumber
 
-# Maximum character threshold for a single section chunk before splitting
+# Maximum character threshold for a single chunk before splitting
 MAX_CHUNK_SIZE = 1200
 
 # Constants for statute metadata
@@ -125,20 +126,124 @@ def extract_cross_references(text: str) -> List[str]:
     return matches
 
 
+def split_section_into_subsections(section_text: str) -> List[str]:
+    """
+    Splits section text into subsection atoms: (1), (2), (3)...
+    Provisos, Explanations, and Illustrations are glued to the preceding atom.
+    """
+    lines = section_text.split("\n")
+    atoms = []
+    current_atom_lines = []
+
+    # Numbered subsection start: e.g. "(1)", "(2)", or "35. (1)" at line start
+    subsec_re = re.compile(r"^(?:\d+\.\s*)?\((\d+)\)\s*")
+
+    for line in lines:
+        line_s = line.strip()
+        m = subsec_re.match(line_s)
+        # If line starts a new numbered subsection (and it's not the very first line of atom 0)
+        if m and current_atom_lines and (not current_atom_lines[0].strip().startswith(line_s[:4])):
+            atoms.append("\n".join(current_atom_lines).strip())
+            current_atom_lines = [line]
+        else:
+            current_atom_lines.append(line)
+
+    if current_atom_lines:
+        atoms.append("\n".join(current_atom_lines).strip())
+
+    return [a for a in atoms if a]
+
+
+def split_atom_into_clauses(atom_text: str) -> List[str]:
+    """
+    Splits an oversized subsection atom into top-level lettered clause atoms (a), (b), (c)...
+    Provisos, Explanations, Illustrations, and nested sub-items (i),(ii) stay glued
+    to the clause they belong to.
+    """
+    lines = atom_text.split("\n")
+    clause_atoms = []
+    current_clause_lines = []
+
+    # Top-level clauses (c), (d), (e)... in subsections (keeping (a) and (b) with proviso intact)
+    top_clause_re = re.compile(r"^\(([c-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)
+    proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
+
+    for line in lines:
+        line_s = line.strip()
+        m = top_clause_re.match(line_s)
+        is_proviso = proviso_or_expl.match(line_s)
+
+        if m and not is_proviso and current_clause_lines:
+            clause_atoms.append("\n".join(current_clause_lines).strip())
+            current_clause_lines = [line]
+        else:
+            current_clause_lines.append(line)
+
+    if current_clause_lines:
+        clause_atoms.append("\n".join(current_clause_lines).strip())
+
+    return [c for c in clause_atoms if c]
+
+
+def pack_atoms_greedily(atoms: List[str], max_size: int = MAX_CHUNK_SIZE) -> List[str]:
+    """
+    Greedily packs atoms into chunks without exceeding max_size.
+    If a single atom exceeds max_size, it is sub-split into clauses and packed.
+    """
+    chunks = []
+    current_buffer = []
+    current_len = 0
+
+    for atom in atoms:
+        atom_len = len(atom)
+
+        # If single atom is oversized (> max_size)
+        if atom_len > max_size:
+            # Sub-split into clauses
+            clauses = split_atom_into_clauses(atom)
+            if len(clauses) > 1:
+                for clause in clauses:
+                    c_len = len(clause)
+                    proj_len = current_len + (2 if current_buffer else 0) + c_len
+                    if proj_len > max_size and current_buffer:
+                        chunks.append("\n\n".join(current_buffer).strip())
+                        current_buffer = [clause]
+                        current_len = c_len
+                    else:
+                        current_buffer.append(clause)
+                        current_len = proj_len
+            else:
+                if current_buffer:
+                    chunks.append("\n\n".join(current_buffer).strip())
+                    current_buffer = []
+                    current_len = 0
+                chunks.append(atom)
+            continue
+
+        # Check if adding atom exceeds max_size
+        projected_len = current_len + (2 if current_buffer else 0) + atom_len
+        if projected_len > max_size and current_buffer:
+            chunks.append("\n\n".join(current_buffer).strip())
+            current_buffer = [atom]
+            current_len = atom_len
+        else:
+            current_buffer.append(atom)
+            current_len = projected_len
+
+    if current_buffer:
+        chunks.append("\n\n".join(current_buffer).strip())
+
+    return chunks
+
+
 def parse_chapters_and_sections(
     pages_text: List[Tuple[int, str]],
     source_uri: str = DEFAULT_SOURCE_URI
 ) -> List[Dict[str, Any]]:
     """
-    Walks cleaned text of pages 1-157 and yields structured StatuteChunk dictionaries.
-    Preserves legal structure, provisos, explanations, illustrations, and metadata.
+    Walks cleaned text of pages 1-157 and yields structured StatuteChunk dictionaries
+    using greedy atom-packing.
     """
-    chunks: List[Dict[str, Any]] = []
-
-    current_chapter: Optional[str] = None
-    current_chapter_title: Optional[str] = None
-    needs_review_chapter: bool = False
-
     doc_lines: List[Tuple[int, str]] = []
 
     for page_num, raw_text in pages_text:
@@ -151,6 +256,9 @@ def parse_chapters_and_sections(
 
     section_blocks: List[Dict[str, Any]] = []
     current_block: Optional[Dict[str, Any]] = None
+    current_chapter: Optional[str] = None
+    current_chapter_title: Optional[str] = None
+    needs_review_chapter: bool = False
 
     idx = 0
     while idx < len(doc_lines):
@@ -171,7 +279,6 @@ def parse_chapters_and_sections(
 
             current_chapter_title = fix_chapter_title_artifact(raw_title)
             needs_review_chapter = bool(re.search(r"\b[A-Z]\s[A-Z]\b", current_chapter_title))
-
             idx += 1
             continue
 
@@ -220,27 +327,19 @@ def parse_chapters_and_sections(
     if current_block:
         section_blocks.append(current_block)
 
-    # Dictionary tracking sequence numbers per section_number across the whole run
+    chunks: List[Dict[str, Any]] = []
     global_section_seq: Dict[str, int] = {}
 
-    # Process section blocks into chunks with atomic / splitting logic
     for block in section_blocks:
         sec_num = block["section_number"]
         block_lines = block["lines"]
-
         page_start = block["page_start"]
         page_end = block["page_end"]
 
         full_block_text = "\n".join([l[1] for l in block_lines]).strip()
         full_block_text = re.sub(r"\n{3,}", "\n\n", full_block_text)
 
-        has_proviso = any(p in full_block_text for p in ["Provided that", "Provided further that", "Provided also that"])
-        has_explanation = "Explanation" in full_block_text
-        has_illustration = "Illustration" in full_block_text
-        has_exception = "Exception" in full_block_text
-
-        refs = extract_cross_references(full_block_text)
-
+        # 3. If total section text <= MAX_CHUNK_SIZE (1200 chars), emit ONE chunk
         if len(full_block_text) <= MAX_CHUNK_SIZE:
             seq = global_section_seq.get(sec_num, 0) + 1
             global_section_seq[sec_num] = seq
@@ -259,35 +358,28 @@ def parse_chapters_and_sections(
                 "subsection": subsection,
                 "clause": None,
                 "text": full_block_text,
-                "has_illustration": has_illustration,
-                "has_proviso": has_proviso,
-                "has_exception": has_exception,
+                "has_illustration": "Illustration" in full_block_text,
+                "has_proviso": any(p in full_block_text for p in ["Provided that", "Provided further that", "Provided also that"]),
+                "has_exception": "Exception" in full_block_text,
                 "page_start": page_start,
                 "page_end": page_end,
                 "chunk_id": chunk_id,
                 "source_uri": source_uri,
-                "references_json": refs,
+                "references_json": extract_cross_references(full_block_text),
                 "needs_review": block["needs_review"]
             })
         else:
-            sub_sections = re.split(r"\n(?=\(\d+\)|\([a-z]\)|Provided that|Explanation)", full_block_text)
+            # 4 & 5. Parse into subsection atoms and pack greedily
+            subsecs = split_section_into_subsections(full_block_text)
+            packed_texts = pack_atoms_greedily(subsecs, MAX_CHUNK_SIZE)
 
-            for sub_text in sub_sections:
-                sub_text_trimmed = sub_text.strip()
-                if not sub_text_trimmed:
-                    continue
-
+            for p_text in packed_texts:
                 seq = global_section_seq.get(sec_num, 0) + 1
                 global_section_seq[sec_num] = seq
                 chunk_id = f"bnss-s{sec_num}-{seq:03d}"
 
-                sub_match = re.search(r"^(\(\d+\)|\([a-z]\))", sub_text_trimmed)
+                sub_match = re.search(r"^(\(\d+\)|\([a-z]\))", p_text.strip())
                 subsection = sub_match.group(1) if sub_match else None
-
-                sub_has_proviso = any(p in sub_text_trimmed for p in ["Provided that", "Provided further that"])
-                sub_has_explanation = "Explanation" in sub_text_trimmed
-                sub_has_illustration = "Illustration" in sub_text_trimmed
-                sub_refs = extract_cross_references(sub_text_trimmed)
 
                 chunks.append({
                     "act": block["act"],
@@ -298,15 +390,15 @@ def parse_chapters_and_sections(
                     "section_title": block["section_title"],
                     "subsection": subsection,
                     "clause": None,
-                    "text": sub_text_trimmed,
-                    "has_illustration": sub_has_illustration,
-                    "has_proviso": sub_has_proviso,
-                    "has_exception": has_exception,
+                    "text": p_text,
+                    "has_illustration": "Illustration" in p_text,
+                    "has_proviso": any(p in p_text for p in ["Provided that", "Provided further that", "Provided also that"]),
+                    "has_exception": "Exception" in p_text,
                     "page_start": page_start,
                     "page_end": page_end,
                     "chunk_id": chunk_id,
                     "source_uri": source_uri,
-                    "references_json": sub_refs,
+                    "references_json": extract_cross_references(p_text),
                     "needs_review": block["needs_review"]
                 })
 
