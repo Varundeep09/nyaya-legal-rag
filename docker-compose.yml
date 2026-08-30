@@ -1,8 +1,6 @@
 # Docker Compose configuration for Nyaya Legal Assistant
 # NOTE: Dockerfiles (Dockerfile.backend, Dockerfile.frontend) will be created in a later deployment step.
 
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
