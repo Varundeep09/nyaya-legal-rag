@@ -6,6 +6,8 @@ uvicorn==0.34.0
 pydantic==2.10.6
 pydantic-settings==2.7.1
 sse-starlette==2.2.1
+python-multipart==0.0.32
+
 
 # Database (PostgreSQL + pgvector)
 SQLAlchemy==2.0.38

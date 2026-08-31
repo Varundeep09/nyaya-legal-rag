@@ -101,11 +101,14 @@ class UserDocument(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="uploaded")
     page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    has_prompt_injection: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     chunks: Mapped[List["UserDocumentChunk"]] = relationship(
         "UserDocumentChunk", back_populates="document", cascade="all, delete-orphan"
     )
+
 
 
 class UserDocumentChunk(Base):

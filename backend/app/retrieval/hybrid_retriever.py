@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.core.models import StatuteChunk
+from app.core.models import StatuteChunk, UserDocument, UserDocumentChunk
 from app.core.logging import logger
 from app.retrieval.embeddings import embed_query
 from app.retrieval.bm25_index import get_or_build_bm25_index, search_bm25
@@ -17,6 +17,7 @@ from app.retrieval.direct_lookup import (
     fetch_section_directly,
     fetch_bns_offence_directly
 )
+
 
 
 async def dense_search(
@@ -295,3 +296,71 @@ async def hybrid_search(
 
     logger.info("Hybrid search retrieved %d ranked chunks.", len(final_results))
     return final_results
+
+
+async def search_user_documents(
+    session: AsyncSession,
+    session_id: str,
+    query_text: str,
+    top_k: int = 5
+) -> List[Dict[str, Any]]:
+    """
+    Performs session-isolated dense vector search strictly within user_document_chunk
+    records where session_id matches the current session.
+    
+    Returns:
+        List of user document chunk dictionaries with source metadata and score.
+    """
+    if not session_id or not query_text.strip():
+        return []
+
+    query_embedding = embed_query(query_text)
+
+    # Cosine distance operator in pgvector is <=>
+    # Cosine similarity = 1.0 - cosine_distance
+    distance_expr = UserDocumentChunk.embedding.cosine_distance(query_embedding).label("distance")
+    similarity_expr = (1.0 - distance_expr).label("similarity")
+
+    stmt = (
+        select(UserDocumentChunk, UserDocument.filename, similarity_expr)
+        .join(UserDocument, UserDocumentChunk.document_id == UserDocument.id)
+        .where(
+            UserDocumentChunk.session_id == session_id,
+            UserDocument.status == "ready",
+            UserDocumentChunk.embedding.is_not(None)
+        )
+        .order_by(distance_expr)
+        .limit(top_k)
+    )
+
+    res = await session.execute(stmt)
+    rows = res.all()
+
+    results = []
+    for chunk, filename, similarity in rows:
+        sim_val = float(similarity) if similarity is not None else 0.0
+        results.append({
+            "chunk_id": f"userdoc-{chunk.document_id}-{chunk.chunk_index}",
+            "document_id": str(chunk.document_id),
+            "session_id": chunk.session_id,
+            "filename": filename,
+            "page_number": chunk.page_number or 1,
+            "chunk_index": chunk.chunk_index,
+            "text": chunk.text,
+            "score": round(sim_val, 4),
+            "dense_score": round(sim_val, 4),
+            "retrieval_method": "user_document",
+            "act": "User Uploaded Document",
+            "act_short": "UserDoc",
+            "section_number": f"Doc: {filename}",
+            "section_title": f"{filename} (Page {chunk.page_number or 1})",
+            "page_start": chunk.page_number or 1,
+            "page_end": chunk.page_number or 1
+        })
+
+    logger.info(
+        "User document search for session '%s' returned %d chunks (top score: %.4f).",
+        session_id, len(results), results[0]["score"] if results else 0.0
+    )
+    return results
+

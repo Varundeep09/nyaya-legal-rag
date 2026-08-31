@@ -4,19 +4,21 @@ Async database engine, session management, and extension/table initialization fo
 
 from typing import AsyncGenerator
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.models import Base
 from app.core.logging import logger
 
-# Create Async SQLAlchemy Engine
+# Create Async SQLAlchemy Engine with NullPool for robust multi-loop & async worker execution
 engine = create_async_engine(
     settings.async_database_url,
     echo=False,
     future=True,
-    pool_pre_ping=True
+    poolclass=NullPool,
 )
+
 
 # Async Session Factory
 AsyncSessionLocal = async_sessionmaker(

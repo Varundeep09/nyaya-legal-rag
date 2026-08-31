@@ -25,8 +25,11 @@ frontend/.vite/
 # Data artifacts & PDFs (Keep directory structure via .gitkeep)
 data/raw/*.pdf
 data/forms/*
+data/uploads/*
 !data/forms/.gitkeep
 !data/raw/.gitkeep
+!data/uploads/.gitkeep
+
 
 # Evaluation output results
 eval/results/*.json

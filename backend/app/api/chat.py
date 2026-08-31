@@ -1,32 +1,32 @@
 """
-Chat endpoint for Nyaya Legal Assistant.
-Provides SSE token streaming, RAG context injection, refusal gating,
-citation verification guarding, and chat history persistence.
+Chat streaming endpoint with dual-corpus RAG retrieval (statute law + session-isolated user documents),
+refusal gating, SSE token streaming, citation validation guard, and history persistence.
 """
 
 import json
-from typing import AsyncGenerator, List, Dict, Any
-from fastapi import APIRouter, Depends
+from typing import AsyncGenerator, List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.db import get_db, AsyncSessionLocal
+from app.core.db import AsyncSessionLocal
 from app.core.logging import logger
-from app.core.models import ChatSession, ChatMessage
-from app.retrieval.hybrid_retriever import hybrid_search
+from app.core.models import ChatSession, ChatMessage, UserDocument
+from app.retrieval.hybrid_retriever import hybrid_search, search_user_documents
 from app.retrieval.refusal import should_refuse, REFUSAL_MESSAGE
-from app.llm.prompts import NYAYA_SYSTEM_PROMPT, build_rag_prompt
+from app.llm.prompts import build_rag_prompt, NYAYA_SYSTEM_PROMPT
 from app.llm.provider import get_llm_provider
 from app.llm.citation_guard import sanitize_response
+from app.core.session import get_session_id_from_header
 
 router = APIRouter(tags=["chat"])
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, description="User legal query or message")
-    session_id: str = Field(default="default-session", description="Unique session identifier")
+    message: str = Field(..., description="User legal query")
+    session_id: Optional[str] = Field(None, description="Session identifier for multi-turn history & user docs")
 
 
 async def persist_chat_turn(
@@ -35,16 +35,13 @@ async def persist_chat_turn(
     assistant_response: str,
     citations: List[str]
 ) -> None:
-    """
-    Persists user message and assistant turn with verified citations into PostgreSQL.
-    """
+    """Persists a complete turn (user query + assistant response) to PostgreSQL."""
     try:
         async with AsyncSessionLocal() as db:
-            # Ensure chat session exists
+            # Ensure chat_session row exists
             stmt = select(ChatSession).where(ChatSession.id == session_id)
             res = await db.execute(stmt)
             session_obj = res.scalar_one_or_none()
-
             if not session_obj:
                 session_obj = ChatSession(id=session_id)
                 db.add(session_obj)
@@ -79,34 +76,52 @@ async def chat_event_stream(
     session_id: str
 ) -> AsyncGenerator[str, None]:
     """
-    Asynchronously streams SSE events for a single chat turn.
+    Asynchronously streams SSE events for a single chat turn with dual-corpus routing.
     """
-    # 1. Retrieve statutory & classification context
+    # 1. Retrieve statutory & user document context
+    statute_chunks: List[Dict[str, Any]] = []
+    user_doc_chunks: List[Dict[str, Any]] = []
+
     async with AsyncSessionLocal() as session:
-        retrieved_chunks = await hybrid_search(session, message, top_k=5)
+        # A. Hybrid Statute Search (BNSS + BNS First Schedule)
+        statute_chunks = await hybrid_search(session, message, top_k=5)
+
+        # B. Check if current session has any ready uploaded documents
+        stmt_docs = select(UserDocument.id).where(
+            UserDocument.session_id == session_id,
+            UserDocument.status == "ready"
+        ).limit(1)
+        res_docs = await session.execute(stmt_docs)
+        has_ready_docs = res_docs.scalar_one_or_none() is not None
+
+        if has_ready_docs:
+            user_doc_chunks = await search_user_documents(session, session_id, message, top_k=3)
 
     # 2. Evaluate refusal threshold
-    if should_refuse(retrieved_chunks):
-        logger.info("Chat query refused: '%s'", message)
+    # If user has uploaded documents matching the query (score >= 0.45) or statute matches pass threshold, do not refuse.
+    user_doc_has_strong_match = any(c.get("score", 0.0) >= 0.45 for c in user_doc_chunks)
+
+    if not user_doc_has_strong_match and should_refuse(statute_chunks):
+        logger.info("Chat query refused: '%s' (session '%s')", message, session_id)
         
-        # Stream refusal message tokens
         words = REFUSAL_MESSAGE.split(" ")
         for i, word in enumerate(words):
             token = word + (" " if i < len(words) - 1 else "")
             payload = json.dumps({"event": "token", "data": token})
             yield f"data: {payload}\n\n"
 
-        # Emit refusal event
         yield f"data: {json.dumps({'event': 'refusal', 'data': True})}\n\n"
         yield f"data: {json.dumps({'event': 'sources', 'data': []})}\n\n"
         yield f"data: {json.dumps({'event': 'done', 'data': {'session_id': session_id, 'refused': True, 'citations': []}})}\n\n"
 
-        # Persist refusal turn
         await persist_chat_turn(session_id, message, REFUSAL_MESSAGE, [])
         return
 
+    # Combine context chunks: User document chunks first, then statute chunks
+    all_context_chunks = user_doc_chunks + statute_chunks
+
     # 3. Build RAG prompt with retrieved context
-    prompt = build_rag_prompt(message, retrieved_chunks)
+    prompt = build_rag_prompt(message, all_context_chunks)
     provider = get_llm_provider()
 
     accumulated_tokens: List[str] = []
@@ -116,7 +131,7 @@ async def chat_event_stream(
         async for token in provider.generate_stream(
             prompt=prompt,
             system_prompt=NYAYA_SYSTEM_PROMPT,
-            context_chunks=retrieved_chunks
+            context_chunks=all_context_chunks
         ):
             if token:
                 accumulated_tokens.append(token)
@@ -133,7 +148,7 @@ async def chat_event_stream(
     # 5. Post-generation citation validation guard
     sanitized_text, valid_citations, hallucinated_citations = sanitize_response(
         full_generated_text,
-        retrieved_chunks,
+        all_context_chunks,
         query=message
     )
 
@@ -149,13 +164,15 @@ async def chat_event_stream(
 
     # 6. Emit source drawer metadata
     sources_metadata = []
-    for chunk in retrieved_chunks:
+    for chunk in all_context_chunks:
         sources_metadata.append({
             "chunk_id": chunk.get("chunk_id"),
             "act": chunk.get("act"),
             "act_short": chunk.get("act_short"),
             "section_number": chunk.get("section_number"),
             "section_title": chunk.get("section_title"),
+            "filename": chunk.get("filename"),
+            "page_number": chunk.get("page_number"),
             "page_start": chunk.get("page_start"),
             "page_end": chunk.get("page_end"),
             "score": chunk.get("score"),
@@ -184,21 +201,26 @@ async def chat_event_stream(
     await persist_chat_turn(session_id, message, sanitized_text, valid_citations)
 
 
-
 @router.post("/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(
+    request: ChatRequest,
+    header_session_id: str = Depends(get_session_id_from_header)
+):
     """
-    SSE streaming chat endpoint.
-    Retrieves legal statute context, gates against off-topic queries,
-    streams LLM tokens, validates citations, and persists turn history.
+    SSE streaming chat endpoint supporting dual-corpus RAG.
+    Retrieves legal statute and user document context, streams LLM tokens,
+    validates citations, and persists turn history.
     """
-    logger.info("Incoming chat request for session '%s': '%s'", request.session_id, request.message)
+    effective_session_id = request.session_id if request.session_id else header_session_id
+    logger.info("Incoming chat request for session '%s': '%s'", effective_session_id, request.message)
+
     return StreamingResponse(
-        chat_event_stream(request.message, request.session_id),
+        chat_event_stream(request.message, effective_session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
+            "X-Session-ID": effective_session_id
         }
     )

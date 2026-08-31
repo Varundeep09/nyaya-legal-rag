@@ -64,7 +64,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: nyaya-worker
     restart: always
-    command: arq app.workers.worker.WorkerSettings
+    command: arq app.workers.document_worker.WorkerSettings
     env_file:
       - .env
     environment:
