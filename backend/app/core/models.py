@@ -44,6 +44,7 @@ class StatuteChunk(Base):
     has_illustration: Mapped[bool] = mapped_column(Boolean, default=False)
     has_proviso: Mapped[bool] = mapped_column(Boolean, default=False)
     has_exception: Mapped[bool] = mapped_column(Boolean, default=False)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     page_start: Mapped[int] = mapped_column(Integer, nullable=False)
     page_end: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)

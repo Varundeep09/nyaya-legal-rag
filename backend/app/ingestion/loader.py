@@ -62,6 +62,7 @@ async def load_statute_chunks_to_db(
             has_illustration=c["has_illustration"],
             has_proviso=c["has_proviso"],
             has_exception=c["has_exception"],
+            needs_review=c.get("needs_review", False),
             page_start=c["page_start"],
             page_end=c["page_end"],
             chunk_id=c["chunk_id"],
