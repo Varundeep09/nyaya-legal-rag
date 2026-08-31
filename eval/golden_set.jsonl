@@ -1,1 +1,28 @@
-{"_comment": "Golden set benchmark dataset for Nyaya legal retrieval evaluation"}
+{"q": "what is section 35 of BNSS", "expected_sections": ["BNSS s.35"], "type": "lookup"}
+{"q": "what is section 103 bnss", "expected_sections": ["BNSS s.103"], "type": "lookup"}
+{"q": "explain BNSS section 104", "expected_sections": ["BNSS s.104"], "type": "lookup"}
+{"q": "what is section 105 of the Bharatiya Nagarik Suraksha Sanhita", "expected_sections": ["BNSS s.105"], "type": "lookup"}
+{"q": "section 187 BNSS", "expected_sections": ["BNSS s.187"], "type": "lookup"}
+{"q": "what is section 246 bnss", "expected_sections": ["BNSS s.246"], "type": "lookup"}
+{"q": "what is section 480 of BNSS", "expected_sections": ["BNSS s.480"], "type": "lookup"}
+{"q": "what is section 2 of BNSS", "expected_sections": ["BNSS s.2"], "type": "lookup"}
+{"q": "what is BNS section 65(1)", "expected_sections": ["BNS s.65(1)"], "type": "lookup"}
+{"q": "what is section 64(2) of BNS", "expected_sections": ["BNS s.64(2)"], "type": "lookup"}
+{"q": "when can a police officer arrest a person without an arrest warrant", "expected_sections": ["BNSS s.35"], "type": "reasoning"}
+{"q": "what is the procedure for conducting a search and list of witnesses during search", "expected_sections": ["BNSS s.103"], "type": "reasoning"}
+{"q": "disposal of search warrant or things found in search", "expected_sections": ["BNSS s.104"], "type": "reasoning"}
+{"q": "audio video electronic recording of search and seizure operations", "expected_sections": ["BNSS s.105"], "type": "reasoning"}
+{"q": "maximum police custody detention period when investigation cannot be completed in 24 hours", "expected_sections": ["BNSS s.187"], "type": "reasoning"}
+{"q": "what persons may be charged jointly in a criminal trial", "expected_sections": ["BNSS s.246"], "type": "reasoning"}
+{"q": "when can bail be granted to an accused in a non-bailable offence", "expected_sections": ["BNSS s.480"], "type": "reasoning"}
+{"q": "definitions of cognizable offence and bailable offence under procedural law", "expected_sections": ["BNSS s.2"], "type": "reasoning"}
+{"q": "punishment and bailable status for rape of a girl under sixteen years of age under BNS", "expected_sections": ["BNS s.65(1)"], "type": "reasoning"}
+{"q": "punishment for rape committed by a police officer or public servant under BNS", "expected_sections": ["BNS s.64(2)"], "type": "reasoning"}
+{"q": "what is the punishment for jaywalking in Ohio", "expected_sections": [], "type": "must_refuse"}
+{"q": "how to bake chocolate chip cookies at home", "expected_sections": [], "type": "must_refuse"}
+{"q": "what is the weather like in Paris in spring", "expected_sections": [], "type": "must_refuse"}
+{"q": "IRS federal income tax deduction rules in the United States", "expected_sections": [], "type": "must_refuse"}
+{"q": "how does a quantum computer factor prime numbers using Shor algorithm", "expected_sections": [], "type": "must_refuse"}
+{"q": "what is the best pizza topping combination", "expected_sections": [], "type": "must_refuse"}
+{"q": "what are the tax deductions allowed under section 80C of the Income Tax Act 1961", "expected_sections": [], "type": "must_refuse"}
+{"q": "how is ancestral property partitioned among legal heirs under Hindu Succession Act", "expected_sections": [], "type": "must_refuse"}

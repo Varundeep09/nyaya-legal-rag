@@ -22,6 +22,7 @@ class SearchRequest(BaseModel):
     chapter: Optional[str] = Field(default=None, description="Optional Roman numeral chapter filter (e.g. 'XXXV')")
     act: Optional[str] = Field(default=None, description="Optional act name or short code filter (e.g. 'BNSS')")
     section: Optional[str] = Field(default=None, description="Optional section number filter (e.g. '103')")
+    retrieval_mode: Optional[str] = Field(default="hybrid", description="Retrieval mode: 'hybrid' or 'dense_only'")
 
 
 class SearchResponse(BaseModel):
@@ -42,6 +43,7 @@ async def search_endpoint(
       and returns deterministic results.
     - Executes dense vector + sparse BM25 retrieval fused with RRF (k=60) for semantic queries.
     - Supports native PostgreSQL metadata filtering by chapter, act, and section.
+    - Supports retrieval_mode: 'hybrid' or 'dense_only'.
     """
     start_time = time.perf_counter()
     try:
@@ -51,7 +53,8 @@ async def search_endpoint(
             top_k=request.top_k,
             chapter_filter=request.chapter,
             act_filter=request.act,
-            section_filter=request.section
+            section_filter=request.section,
+            retrieval_mode=request.retrieval_mode or "hybrid"
         )
         latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 

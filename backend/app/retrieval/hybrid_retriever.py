@@ -142,70 +142,72 @@ async def hybrid_search(
     top_k: int = 10,
     chapter_filter: Optional[str] = None,
     act_filter: Optional[str] = None,
-    section_filter: Optional[str] = None
+    section_filter: Optional[str] = None,
+    retrieval_mode: str = "hybrid"
 ) -> List[Dict[str, Any]]:
     """
     Main retrieval entrypoint for Nyaya:
-    1. Direct Section Lookup Check:
+    1. Direct Section Lookup Check (if retrieval_mode == 'hybrid'):
        If query explicitly asks for a section (e.g. 'what is section 103 bnss'),
        bypasses similarity search and returns all chunks for that section deterministically.
     2. Hybrid Search Path:
        - Runs dense cosine search against pgvector with SQL filters.
-       - Runs sparse BM25 search over corpus text.
+       - Runs sparse BM25 search over corpus text (if retrieval_mode == 'hybrid').
        - Applies metadata filtering to sparse candidates.
-       - Fuses results via Reciprocal Rank Fusion (k=60).
+       - Fuses results via Reciprocal Rank Fusion (k=60) or dense cosine ranking.
        - Hydrates top_k chunk records from PostgreSQL.
        
     Returns:
         List of complete chunk dictionaries with metadata and score fields.
     """
-    logger.info("Executing hybrid_search for query: '%s' (top_k=%d)", query_text, top_k)
+    logger.info("Executing %s search for query: '%s' (top_k=%d)", retrieval_mode, query_text, top_k)
 
-    # 1. Check for Direct Section Lookup intent (Dual-table: BNSS statute chunks + BNS First Schedule)
-    intent = detect_act_and_section_intent(query_text)
-    if (
-        intent is not None
-        and not chapter_filter
-        and not act_filter
-        and (not section_filter or section_filter in (intent["section"], intent["base_section"]))
-    ):
-        act = intent["act"]
-        sec = intent["section"]
-        base_sec = intent["base_section"]
+    # 1. Check for Direct Section Lookup intent (Hybrid mode only)
+    if retrieval_mode == "hybrid":
+        intent = detect_act_and_section_intent(query_text)
+        if (
+            intent is not None
+            and not chapter_filter
+            and not act_filter
+            and (not section_filter or section_filter in (intent["section"], intent["base_section"]))
+        ):
+            act = intent["act"]
+            sec = intent["section"]
+            base_sec = intent["base_section"]
 
-        if act == "BNS":
-            # Direct BNS offence classification lookup
-            bns_results = await fetch_bns_offence_directly(session, sec)
-            if not bns_results and sec != base_sec:
-                bns_results = await fetch_bns_offence_directly(session, base_sec)
-            if bns_results:
-                logger.info("Direct BNS offence lookup resolved %d rows for Section %s.", len(bns_results), sec)
-                return bns_results[:top_k]
-        elif act == "BNSS":
-            # Direct BNSS statute chunk lookup
-            direct_results = await fetch_section_directly(session, base_sec)
-            if direct_results:
-                logger.info("Direct BNSS section lookup resolved %d chunks for Section %s.", len(direct_results), base_sec)
-                return direct_results[:top_k]
-        else:  # AMBIGUOUS
-            # Try BNSS statute_chunk first; if no match found, fallback to BNS offence_classification
-            direct_results = await fetch_section_directly(session, base_sec)
-            if direct_results:
-                logger.info(
-                    "Direct section lookup (ambiguous query) resolved %d BNSS chunks for Section %s.",
-                    len(direct_results),
-                    base_sec
-                )
-                return direct_results[:top_k]
+            if act == "BNS":
+                # Direct BNS offence classification lookup
+                bns_results = await fetch_bns_offence_directly(session, sec)
+                if not bns_results and sec != base_sec:
+                    bns_results = await fetch_bns_offence_directly(session, base_sec)
+                if bns_results:
+                    logger.info("Direct BNS offence lookup resolved %d rows for Section %s.", len(bns_results), sec)
+                    return bns_results[:top_k]
+            elif act == "BNSS":
+                # Direct BNSS statute chunk lookup
+                direct_results = await fetch_section_directly(session, base_sec)
+                if direct_results:
+                    logger.info("Direct BNSS section lookup resolved %d chunks for Section %s.", len(direct_results), base_sec)
+                    return direct_results[:top_k]
+            else:  # AMBIGUOUS
+                # Try BNSS statute_chunk first; if no match found, fallback to BNS offence_classification
+                direct_results = await fetch_section_directly(session, base_sec)
+                if direct_results:
+                    logger.info(
+                        "Direct section lookup (ambiguous query) resolved %d BNSS chunks for Section %s.",
+                        len(direct_results),
+                        base_sec
+                    )
+                    return direct_results[:top_k]
 
-            bns_results = await fetch_bns_offence_directly(session, sec)
-            if bns_results:
-                logger.info(
-                    "Direct section lookup fallback resolved %d BNS offence rows for Section %s.",
-                    len(bns_results),
-                    sec
-                )
-                return bns_results[:top_k]
+                bns_results = await fetch_bns_offence_directly(session, sec)
+                if bns_results:
+                    logger.info(
+                        "Direct section lookup fallback resolved %d BNS offence rows for Section %s.",
+                        len(bns_results),
+                        sec
+                    )
+                    return bns_results[:top_k]
 
     # 2. Run Dense & Sparse Search
     candidate_depth = max(top_k * 3, 30)
@@ -214,11 +216,54 @@ async def hybrid_search(
     dense_results = await dense_search(
         session=session,
         query_text=query_text,
-        top_k=candidate_depth,
+        top_k=candidate_depth if retrieval_mode == "hybrid" else top_k,
         chapter_filter=chapter_filter,
         act_filter=act_filter,
         section_filter=section_filter
     )
+
+    if retrieval_mode == "dense_only":
+        if not dense_results:
+            return []
+        top_chunk_ids = [cid for cid, _ in dense_results[:top_k]]
+        dense_score_map = {cid: score for cid, score in dense_results[:top_k]}
+
+        stmt = select(StatuteChunk).where(StatuteChunk.chunk_id.in_(top_chunk_ids))
+        result = await session.execute(stmt)
+        chunks = result.scalars().all()
+        chunk_by_id = {c.chunk_id: c for c in chunks}
+
+        final_results = []
+        for cid in top_chunk_ids:
+            chunk = chunk_by_id.get(cid)
+            if not chunk:
+                continue
+            sc = dense_score_map[cid]
+            final_results.append({
+                "chunk_id": chunk.chunk_id,
+                "act": chunk.act,
+                "act_short": chunk.act_short,
+                "chapter": chunk.chapter,
+                "chapter_title": chunk.chapter_title,
+                "section_number": chunk.section_number,
+                "section_title": chunk.section_title,
+                "subsection": chunk.subsection,
+                "clause": chunk.clause,
+                "text": chunk.text,
+                "page_start": chunk.page_start,
+                "page_end": chunk.page_end,
+                "has_proviso": chunk.has_proviso,
+                "has_illustration": chunk.has_illustration,
+                "has_exception": chunk.has_exception,
+                "references_json": chunk.references_json,
+                "retrieval_method": "dense_only",
+                "score": round(sc, 4),
+                "dense_score": round(sc, 4),
+                "dense_rank": 1,
+                "bm25_score": None,
+                "bm25_rank": None
+            })
+        return final_results
 
     # Sparse BM25 Search
     bm25_index, chunk_id_list = await get_or_build_bm25_index(session)
@@ -261,6 +306,7 @@ async def hybrid_search(
     result = await session.execute(stmt)
     chunks = result.scalars().all()
     chunk_by_id = {c.chunk_id: c for c in chunks}
+
 
     # 5. Assemble final ordered result list
     final_results = []

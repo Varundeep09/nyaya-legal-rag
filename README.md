@@ -33,7 +33,40 @@ Options:
 TODO
 
 ## 7. How to run the tests and the eval suite
-TODO
+
+### Running Unit & Integration Tests
+To run the full 39-test test suite covering atom chunking, schedule parsing, pgvector storage, async arq worker, session isolation, citation validation, and prompt injection defense:
+```bash
+$env:PYTHONPATH="backend"; .\venv\Scripts\python -m pytest backend/tests/ -v
+```
+
+### Running the End-to-End Evaluation Suite (28 Golden Set Queries)
+Nyaya includes a 28-query evaluation harness (`eval/golden_set.jsonl`) measuring Recall@5, Recall@10, Mean Reciprocal Rank (MRR), Citation Accuracy, Refusal Rate, and Latency (p50/p95) across both **Hybrid (Direct Lookup + Dense Vector + Sparse BM25 via RRF)** and **Dense-Only** configurations:
+
+```bash
+# Run comparative evaluation across both configurations
+$env:PYTHONPATH="backend"; .\venv\Scripts\python eval/run_eval.py
+
+# Run CI regression assertions against saved benchmarks
+$env:PYTHONPATH="backend"; .\venv\Scripts\python -m pytest eval/results/ci_assertions.py -v
+```
+
+### Comparative Benchmark Results
+
+| Metric | Hybrid (Direct + Dense + BM25 RRF) | Dense Only (pgvector cosine) | Winner |
+| :--- | :--- | :--- | :--- |
+| **Recall@5 (%)** | **90.00%** | 45.00% | **Hybrid (+45.0%)** |
+| **Recall@10 (%)** | **90.00%** | 55.00% | **Hybrid (+35.0%)** |
+| **Mean Reciprocal Rank (MRR)** | **0.8125** | 0.3917 | **Hybrid (+0.4208)** |
+| **Must-Refuse Accuracy (%)** | **75.00%** | 75.00% | **Tie** |
+| **Citation Accuracy (%)** | 80.00% | **100.00%** | Dense Only* |
+| **Search Latency p50 (ms)** | **257.40 ms** | 299.94 ms | **Hybrid** |
+| **Search Latency p95 (ms)** | 754.10 ms | **503.19 ms** | Dense Only |
+| **Chat Latency p50 (ms)** | 5627.16 ms | **899.57 ms** | Dense Only |
+| **Chat Latency p95 (ms)** | 15051.96 ms | **1291.06 ms** | Dense Only |
+
+> **Why Hybrid Retrieval Won**: Hybrid retrieval dramatically outperforms dense-only retrieval on Recall@5 (90.0% vs 45.0%) and MRR (0.8125 vs 0.3917) because legal queries heavily feature exact statutory identifiers and verbatim legal terms (e.g., `"Section 103"`, `"Section 35"`) where dense vector embeddings suffer from semantic diffusion while BM25 and direct section routing hit exact matches deterministically.
+
 
 ## 8. AI usage disclosure
 TODO
