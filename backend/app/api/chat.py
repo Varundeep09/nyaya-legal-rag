@@ -164,20 +164,25 @@ async def chat_event_stream(
 
     yield f"data: {json.dumps({'event': 'sources', 'data': sources_metadata})}\n\n"
 
-    # 7. Emit final done event
+    # 7. Emit model call proof metadata
+    yield f"data: {json.dumps({'event': 'model_proof', 'data': provider.last_call_metadata})}\n\n"
+
+    # 8. Emit final done event
     done_payload = {
         "event": "done",
         "data": {
             "session_id": session_id,
             "refused": False,
             "citations": valid_citations,
-            "stripped_hallucinations": hallucinated_citations
+            "stripped_hallucinations": hallucinated_citations,
+            "model_proof": provider.last_call_metadata
         }
     }
     yield f"data: {json.dumps(done_payload)}\n\n"
 
-    # 8. Persist chat turn to DB
+    # 9. Persist chat turn to DB
     await persist_chat_turn(session_id, message, sanitized_text, valid_citations)
+
 
 
 @router.post("/chat")
