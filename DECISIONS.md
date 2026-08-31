@@ -108,7 +108,28 @@ To establish a principled, non-guessed refusal threshold, we executed a comparat
 
 #### 3. Post-Generation Citation Guard Architecture
 Even with strict system prompts, LLMs can extrapolate ungrounded statutory citations. [`citation_guard.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/llm/citation_guard.py) implements runtime validation:
-- Extracts all citation tokens `[BNSS s.X(Y)]` and `[BNS s.X(Y)]`.
-- Validates them strictly against the section numbers present in the retrieved chunks injected for that specific request.
+- Extracts all citation tokens `[BNSS s.X(Y)]`, `[BNS s.X(Y)]`, and `[Doc: filename, p.X]`.
+- Validates statute citations strictly against the section numbers present in the retrieved chunks injected for that specific request.
+- Validates user document citations strictly against `(filename, page_number)` tuples physically present in the session-isolated document chunks retrieved for that turn.
 - Strips any hallucinated citation tokens, logs an alert, and emits a `guard_warning` SSE event.
+
+---
+
+### Scope Boundary: Structural Grounding vs Semantic Fact Verification in User Documents
+
+#### Context
+When querying user-uploaded documents, an AI assistant may cite a valid source (`[Doc: notice.pdf, p.1]`) while making assertions about the contents.
+
+#### Scope Decision & Explicit Trade-off
+1. **Structural Grounding (Guaranteed by Citation Guard)**:
+   The citation guard strictly enforces that:
+   - The cited document exists and was uploaded in the **current session**.
+   - The cited `filename` and `page_number` match the actual chunks retrieved and injected into the context window.
+   - Any citation referencing an unretrieved document, wrong session, or hallucinated page number is deterministically stripped.
+2. **Semantic Fact Verification (Acknowledged Limitation)**:
+   The guard verifies structural authority and provenance, but does *not* execute secondary downstream natural language inference (NLI) to mathematically prove that every entity or date asserted in the response was factually written in that chunk.
+3. **Engineering Justification**:
+   - Running sentence-level NLI entailment on every streamed token introduces severe latency and degrades the user experience.
+   - Grounding is maintained at the prompt engineering and structural provenance layer, consistent with the evaluation standard applied to statutory citations across the industry.
+
 

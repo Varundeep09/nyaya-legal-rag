@@ -1,9 +1,12 @@
 """
-Unit tests for the post-generation citation validation guard.
+Unit tests for the post-generation citation validation guard covering
+statute section citations ([BNSS s.X], [BNS s.X]) and user document citations ([Doc: filename, p.X]).
 """
 
 from app.llm.citation_guard import (
     extract_citations,
+    extract_doc_citations,
+    validate_doc_citations,
     validate_citations,
     sanitize_response
 )
@@ -87,3 +90,66 @@ def test_sanitize_response_strips_hallucinated_citations():
     assert "[BNSS s.888]" not in sanitized
     assert "103" in valid
     assert "888" in hallucinated
+
+
+def test_doc_citation_extraction():
+    """
+    Asserts regex correctly extracts (filename, page_number) tuples from document citations.
+    """
+    text = (
+        "According to the FIR [Doc: police_fir.pdf, p.2], the accused fled. "
+        "As noted in the agreement [Doc: lease_contract.pdf]."
+    )
+    doc_cits = extract_doc_citations(text)
+    assert ("police_fir.pdf", 2) in doc_cits
+    assert ("lease_contract.pdf", None) in doc_cits
+    assert len(doc_cits) == 2
+
+
+def test_doc_citation_validation():
+    """
+    Tests validate_doc_citations and sanitize_response on user document citations:
+    - [Doc: tenant_notice.pdf, p.1] -> VALID (matches retrieved user chunk)
+    - [Doc: fake_judgment.pdf, p.3] -> INVALID (file was never retrieved)
+    - [Doc: tenant_notice.pdf, p.99] -> INVALID (page 99 was not in retrieved chunks)
+    """
+    retrieved_chunks = [
+        {
+            "chunk_id": "userdoc-1-0",
+            "retrieval_method": "user_document",
+            "filename": "tenant_notice.pdf",
+            "page_number": 1,
+            "text": "Notice of eviction."
+        },
+        {
+            "chunk_id": "bnss-s35-001",
+            "act_short": "BNSS",
+            "section_number": "35",
+            "section_title": "Section 35"
+        }
+    ]
+
+    generated_text = (
+        "The tenant is in arrears of Rs 1,80,000 [Doc: tenant_notice.pdf, p.1]. "
+        "The High Court issued stay in [Doc: fake_judgment.pdf, p.3]. "
+        "Further lease terms are in [Doc: tenant_notice.pdf, p.99]. "
+        "Police action follows [BNSS s.35]."
+    )
+
+    sanitized, valid, hallucinated = sanitize_response(
+        generated_text,
+        retrieved_chunks,
+        query="arrears and eviction"
+    )
+
+    # Valid citations preserved
+    assert "[Doc: tenant_notice.pdf, p.1]" in sanitized
+    assert "[BNSS s.35]" in sanitized
+    assert "Doc: tenant_notice.pdf, p.1" in valid
+    assert "35" in valid
+
+    # Hallucinated citations stripped
+    assert "[Doc: fake_judgment.pdf, p.3]" not in sanitized
+    assert "[Doc: tenant_notice.pdf, p.99]" not in sanitized
+    assert "Doc: fake_judgment.pdf, p.3" in hallucinated
+    assert "Doc: tenant_notice.pdf, p.99" in hallucinated

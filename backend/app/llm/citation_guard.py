@@ -6,7 +6,7 @@ Strips hallucinated citations to prevent fabricating authorities.
 """
 
 import re
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from app.core.logging import logger
 
 STATUTE_CITATION_PATTERN = re.compile(
@@ -18,6 +18,70 @@ USER_DOC_CITATION_PATTERN = re.compile(
     r"\[Doc:\s*([^,\]]+?)(?:,\s*p\.(\d+))?\]",
     re.IGNORECASE
 )
+
+
+def extract_doc_citations(generated_text: str) -> List[Tuple[str, Optional[int]]]:
+    """
+    Regex extracts every '[Doc: <filename>, p.<page>]' or '[Doc: <filename>]' citation.
+    Returns a list of (filename, page_number) tuples.
+    """
+    if not generated_text:
+        return []
+    doc_citations = []
+    for m in USER_DOC_CITATION_PATTERN.finditer(generated_text):
+        filename = m.group(1).strip()
+        page_str = m.group(2)
+        page_num = int(page_str) if page_str else None
+        doc_citations.append((filename, page_num))
+    return doc_citations
+
+
+def validate_doc_citations(
+    doc_citations: List[Tuple[str, Optional[int]]],
+    retrieved_user_chunks: List[Dict[str, Any]]
+) -> Tuple[List[Tuple[str, Optional[int]]], List[Tuple[str, Optional[int]]]]:
+    """
+    Validates that each cited (filename, page_number) pair actually matches a
+    filename and page_number that was present in the retrieved user document chunks
+    sent to the LLM for this request.
+    
+    A citation referencing a filename never uploaded/retrieved, or a page number
+    that the retrieved chunks never came from, is marked invalid.
+    
+    Returns:
+        Tuple of (valid_doc_citations, invalid_doc_citations)
+    """
+    if not doc_citations:
+        return [], []
+
+    # Map filename_lower -> set of valid page numbers retrieved
+    valid_retrieved_map: Dict[str, set] = {}
+    for chunk in retrieved_user_chunks:
+        retrieval_method = chunk.get("retrieval_method", "")
+        act_short = chunk.get("act_short", "")
+        if retrieval_method == "user_document" or act_short == "UserDoc":
+            fn = str(chunk.get("filename", "")).strip().lower()
+            page = chunk.get("page_number") or chunk.get("page_start")
+            if fn:
+                if fn not in valid_retrieved_map:
+                    valid_retrieved_map[fn] = set()
+                if page is not None:
+                    valid_retrieved_map[fn].add(int(page))
+
+    valid: List[Tuple[str, Optional[int]]] = []
+    invalid: List[Tuple[str, Optional[int]]] = []
+
+    for fn, page in doc_citations:
+        fn_clean = fn.strip().lower()
+        if fn_clean not in valid_retrieved_map:
+            invalid.append((fn, page))
+        elif page is not None and valid_retrieved_map[fn_clean] and page not in valid_retrieved_map[fn_clean]:
+            # Cited a page number not in retrieved chunks for this file
+            invalid.append((fn, page))
+        else:
+            valid.append((fn, page))
+
+    return valid, invalid
 
 
 def extract_citations(generated_text: str) -> List[str]:
@@ -48,7 +112,7 @@ def extract_citations(generated_text: str) -> List[str]:
 def extract_full_citation_matches(generated_text: str) -> List[Tuple[str, str, str]]:
     """
     Extracts (full_token, citation_type, identifier) tuples.
-    e.g. ('[BNSS s.35(1)]', 'STATUTE', '35(1)') or ('[Doc: notice.pdf, p.1]', 'USER_DOC', 'notice.pdf')
+    e.g. ('[BNSS s.35(1)]', 'STATUTE', '35(1)') or ('[Doc: notice.pdf, p.1]', 'USER_DOC', 'Doc: notice.pdf, p.1')
     """
     if not generated_text:
         return []
@@ -80,16 +144,14 @@ def validate_citations(
     if not citations:
         return [], []
 
-    # Collect valid statute sections and valid user document filenames
+    # Collect valid statute sections and valid user document filename+page pairs
     valid_statute_sections = set()
-    valid_doc_filenames = set()
+    user_doc_chunks = []
 
     for chunk in retrieved_chunks:
         retrieval_method = chunk.get("retrieval_method", "")
         if retrieval_method == "user_document" or chunk.get("act_short") == "UserDoc":
-            fn = str(chunk.get("filename", "")).strip().lower()
-            if fn:
-                valid_doc_filenames.add(fn)
+            user_doc_chunks.append(chunk)
         else:
             sec = str(chunk.get("section_number", "")).strip()
             if sec:
@@ -101,14 +163,33 @@ def validate_citations(
     valid = []
     hallucinated = []
 
+    # Validate doc citations using validate_doc_citations
+    doc_cits_raw = [c for c in citations if c.startswith("Doc:")]
+    parsed_doc_tuples = []
+    for d in doc_cits_raw:
+        m = re.match(r"^Doc:\s*([^,]+)(?:,\s*p\.(\d+))?", d)
+        if m:
+            fn = m.group(1).strip()
+            page = int(m.group(2)) if m.group(2) else None
+            parsed_doc_tuples.append((d, (fn, page)))
+
+    valid_doc_tuples, invalid_doc_tuples = validate_doc_citations(
+        [t[1] for t in parsed_doc_tuples],
+        user_doc_chunks
+    )
+    valid_doc_set = set(valid_doc_tuples)
+
     for cit in citations:
-        # Check if it's a user document citation
         if cit.startswith("Doc:"):
-            # Extract filename from 'Doc: filename.pdf, p.1'
-            doc_match = re.match(r"^Doc:\s*([^,]+)", cit)
-            doc_name = doc_match.group(1).strip().lower() if doc_match else ""
-            if doc_name in valid_doc_filenames:
-                valid.append(cit)
+            # Check if this doc citation tuple was valid
+            m = re.match(r"^Doc:\s*([^,]+)(?:,\s*p\.(\d+))?", cit)
+            if m:
+                fn = m.group(1).strip()
+                page = int(m.group(2)) if m.group(2) else None
+                if (fn, page) in valid_doc_set:
+                    valid.append(cit)
+                else:
+                    hallucinated.append(cit)
             else:
                 hallucinated.append(cit)
         else:
@@ -148,8 +229,8 @@ def sanitize_response(
     for full_token, cit_type, ident in citation_matches:
         if ident in hallucinated_ids:
             logger.warning(
-                "CITATION GUARD TRIGGERED: Stripping hallucinated %s citation '%s' for query '%s'.",
-                cit_type, full_token, query
+                "CITATION GUARD TRIGGERED: Stripping hallucinated %s citation '%s' (ident '%s') for query '%s'.",
+                cit_type, full_token, ident, query
             )
             sanitized_text = sanitized_text.replace(full_token, "")
 
