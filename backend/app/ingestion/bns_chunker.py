@@ -5,7 +5,7 @@ explanations, and illustrations attached to their parent clauses.
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Set
 import pdfplumber
 
 # Maximum character threshold for a single chunk before splitting
@@ -164,8 +164,8 @@ def split_atom_into_clauses(atom_text: str) -> List[str]:
     clause_atoms = []
     current_clause_lines = []
 
-    # Top-level clauses (c), (d), (e)... in subsections (keeping (a) and (b) with proviso intact)
-    top_clause_re = re.compile(r"^\(([c-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)
+    # Top-level clauses (a), (b), (c)... matching keyword-based heuristic
+    top_clause_re = re.compile(r"^\(([a-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)
     proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
 
     for line in lines:
@@ -185,7 +185,12 @@ def split_atom_into_clauses(atom_text: str) -> List[str]:
     return [c for c in clause_atoms if c]
 
 
-def pack_atoms_greedily(atoms: List[str], max_size: int = MAX_CHUNK_SIZE) -> List[str]:
+def pack_atoms_greedily(
+    atoms: List[str],
+    max_size: int = MAX_CHUNK_SIZE,
+    fallback_tracker: Optional[Set[str]] = None,
+    sec_num: Optional[str] = None
+) -> List[str]:
     """
     Greedily packs atoms into chunks without exceeding max_size.
     If a single atom exceeds max_size, it is sub-split into clauses and packed.
@@ -199,6 +204,9 @@ def pack_atoms_greedily(atoms: List[str], max_size: int = MAX_CHUNK_SIZE) -> Lis
 
         # If single atom is oversized (> max_size)
         if atom_len > max_size:
+            if fallback_tracker is not None and sec_num is not None:
+                fallback_tracker.add(sec_num)
+
             # Sub-split into clauses
             clauses = split_atom_into_clauses(atom)
             if len(clauses) > 1:
@@ -206,9 +214,17 @@ def pack_atoms_greedily(atoms: List[str], max_size: int = MAX_CHUNK_SIZE) -> Lis
                     c_len = len(clause)
                     proj_len = current_len + (2 if current_buffer else 0) + c_len
                     if proj_len > max_size and current_buffer:
-                        chunks.append("\n\n".join(current_buffer).strip())
-                        current_buffer = [clause]
-                        current_len = c_len
+                        # If current_buffer contains a short preamble/clause (< 350 chars) and next clause is oversized,
+                        # absorb to keep context attached
+                        if current_len < 350 and c_len > max_size:
+                            current_buffer.append(clause)
+                            chunks.append("\n\n".join(current_buffer).strip())
+                            current_buffer = []
+                            current_len = 0
+                        else:
+                            chunks.append("\n\n".join(current_buffer).strip())
+                            current_buffer = [clause]
+                            current_len = c_len
                     else:
                         current_buffer.append(clause)
                         current_len = proj_len
@@ -238,11 +254,12 @@ def pack_atoms_greedily(atoms: List[str], max_size: int = MAX_CHUNK_SIZE) -> Lis
 
 def parse_chapters_and_sections(
     pages_text: List[Tuple[int, str]],
-    source_uri: str = DEFAULT_SOURCE_URI
+    source_uri: str = DEFAULT_SOURCE_URI,
+    stats: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Walks cleaned text of pages 1-157 and yields structured StatuteChunk dictionaries
-    using greedy atom-packing.
+    using greedy atom-packing. Tracks fallback section metrics if stats dict is provided.
     """
     doc_lines: List[Tuple[int, str]] = []
 
@@ -329,6 +346,7 @@ def parse_chapters_and_sections(
 
     chunks: List[Dict[str, Any]] = []
     global_section_seq: Dict[str, int] = {}
+    fallback_sections: Set[str] = set()
 
     for block in section_blocks:
         sec_num = block["section_number"]
@@ -371,7 +389,12 @@ def parse_chapters_and_sections(
         else:
             # 4 & 5. Parse into subsection atoms and pack greedily
             subsecs = split_section_into_subsections(full_block_text)
-            packed_texts = pack_atoms_greedily(subsecs, MAX_CHUNK_SIZE)
+            packed_texts = pack_atoms_greedily(
+                subsecs,
+                max_size=MAX_CHUNK_SIZE,
+                fallback_tracker=fallback_sections,
+                sec_num=sec_num
+            )
 
             for p_text in packed_texts:
                 seq = global_section_seq.get(sec_num, 0) + 1
@@ -401,5 +424,10 @@ def parse_chapters_and_sections(
                     "references_json": extract_cross_references(p_text),
                     "needs_review": block["needs_review"]
                 })
+
+    if stats is not None:
+        sorted_fallback = sorted(list(fallback_sections), key=lambda x: int(x) if x.isdigit() else 9999)
+        stats["fallback_sections"] = sorted_fallback
+        stats["fallback_count"] = len(sorted_fallback)
 
     return chunks

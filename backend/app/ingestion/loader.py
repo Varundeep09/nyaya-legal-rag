@@ -3,6 +3,7 @@ Async loader module to ingest narrative BNSS statute chunks into PostgreSQL data
 """
 
 import os
+from typing import Optional, Dict, Any
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +16,15 @@ from app.ingestion.bns_chunker import (
 )
 
 
-async def load_statute_chunks_to_db(session: AsyncSession, pdf_path: str = None) -> int:
+async def load_statute_chunks_to_db(
+    session: AsyncSession,
+    pdf_path: str = None,
+    stats: Optional[Dict[str, Any]] = None
+) -> int:
     """
     Idempotently ingests narrative BNSS statute chunks (pages 1-157) into PostgreSQL.
     Deletes pre-existing chunks for the same source_uri before re-inserting.
+    Populates stats dict with ingestion metrics if provided.
     Returns total inserted chunk count.
     """
     target_pdf = pdf_path or DEFAULT_SOURCE_URI
@@ -30,7 +36,7 @@ async def load_statute_chunks_to_db(session: AsyncSession, pdf_path: str = None)
     pages_text = extract_pages(target_pdf, start_page=1, end_page=157)
 
     logger.info(f"Parsing chapters and sections across {len(pages_text)} pages...")
-    chunk_dicts = parse_chapters_and_sections(pages_text, source_uri=DEFAULT_SOURCE_URI)
+    chunk_dicts = parse_chapters_and_sections(pages_text, source_uri=DEFAULT_SOURCE_URI, stats=stats)
     logger.info(f"Generated {len(chunk_dicts)} statute chunks.")
 
     # Idempotency: Delete existing chunks for this source_uri first
