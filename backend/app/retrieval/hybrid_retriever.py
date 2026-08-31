@@ -11,7 +11,12 @@ from app.core.models import StatuteChunk
 from app.core.logging import logger
 from app.retrieval.embeddings import embed_query
 from app.retrieval.bm25_index import get_or_build_bm25_index, search_bm25
-from app.retrieval.direct_lookup import detect_section_intent, fetch_section_directly
+from app.retrieval.direct_lookup import (
+    detect_section_intent,
+    detect_act_and_section_intent,
+    fetch_section_directly,
+    fetch_bns_offence_directly
+)
 
 
 async def dense_search(
@@ -155,18 +160,51 @@ async def hybrid_search(
     """
     logger.info("Executing hybrid_search for query: '%s' (top_k=%d)", query_text, top_k)
 
-    # 1. Check for Direct Section Lookup intent
-    detected_section = detect_section_intent(query_text)
+    # 1. Check for Direct Section Lookup intent (Dual-table: BNSS statute chunks + BNS First Schedule)
+    intent = detect_act_and_section_intent(query_text)
     if (
-        detected_section is not None
+        intent is not None
         and not chapter_filter
         and not act_filter
-        and (not section_filter or section_filter == detected_section)
+        and (not section_filter or section_filter in (intent["section"], intent["base_section"]))
     ):
-        direct_results = await fetch_section_directly(session, detected_section)
-        if direct_results:
-            logger.info("Direct section lookup resolved %d chunks for Section %s.", len(direct_results), detected_section)
-            return direct_results[:top_k]
+        act = intent["act"]
+        sec = intent["section"]
+        base_sec = intent["base_section"]
+
+        if act == "BNS":
+            # Direct BNS offence classification lookup
+            bns_results = await fetch_bns_offence_directly(session, sec)
+            if not bns_results and sec != base_sec:
+                bns_results = await fetch_bns_offence_directly(session, base_sec)
+            if bns_results:
+                logger.info("Direct BNS offence lookup resolved %d rows for Section %s.", len(bns_results), sec)
+                return bns_results[:top_k]
+        elif act == "BNSS":
+            # Direct BNSS statute chunk lookup
+            direct_results = await fetch_section_directly(session, base_sec)
+            if direct_results:
+                logger.info("Direct BNSS section lookup resolved %d chunks for Section %s.", len(direct_results), base_sec)
+                return direct_results[:top_k]
+        else:  # AMBIGUOUS
+            # Try BNSS statute_chunk first; if no match found, fallback to BNS offence_classification
+            direct_results = await fetch_section_directly(session, base_sec)
+            if direct_results:
+                logger.info(
+                    "Direct section lookup (ambiguous query) resolved %d BNSS chunks for Section %s.",
+                    len(direct_results),
+                    base_sec
+                )
+                return direct_results[:top_k]
+
+            bns_results = await fetch_bns_offence_directly(session, sec)
+            if bns_results:
+                logger.info(
+                    "Direct section lookup fallback resolved %d BNS offence rows for Section %s.",
+                    len(bns_results),
+                    sec
+                )
+                return bns_results[:top_k]
 
     # 2. Run Dense & Sparse Search
     candidate_depth = max(top_k * 3, 30)

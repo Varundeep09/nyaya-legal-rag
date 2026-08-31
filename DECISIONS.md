@@ -47,3 +47,28 @@ Across all 157 narrative pages of BNSS, this fallback path is triggered by **62 
    - **Trade-off Evaluation**: While this results in a single chunk exceeding the 1200-char soft limit, it ensures that the critical closing proviso (*"Provided that where a number of persons are charged with separate offences..."*) is 100% attached to all 7 preceding clauses. In a legal retrieval setting, exceeding chunk length by 1.5 KB is far preferable to emitting orphaned 150-char clauses with a detached proviso.
    - **Conclusion**: A keyword heuristic tuned to legislative drafting styles offers high precision against accidental sentence fragmentation, but is inherently coupled to specific grammatical constructs. In a broader multi-statute ingestion system, this would need to transition to dependency-tree grammar parsing or structured legislative XML/markdown schemas.
 
+---
+
+### First Schedule (BNS Offence Classification) Positional Parsing Trade-off
+
+#### Context & Layout Constraints
+The First Schedule (pages 158–189) specifies the procedural classification of Bharatiya Nyaya Sanhita (BNS) offences across 6 semantic columns: *1. Section, 2. Offence, 3. Punishment, 4. Cognizable/Non-cognizable, 5. Bailable/Non-bailable, 6. Triable Court*.
+However, this is a positional layout table with NO ruled grid lines or table borders. `pdfplumber.extract_tables()` fails completely on these pages, returning empty arrays or corrupt column splits.
+
+#### Engineering Decision & Scope
+Rather than attempting brittle x-coordinate slicing across variable column widths that break across line wraps, we implemented a robust row-boundary streaming parser ([`schedule_parser.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/ingestion/schedule_parser.py)):
+1. **Row Detection**: Keys off section number start patterns `^(\d{1,3}(?:\([0-9]+\))?(?:\([a-z]\))?)\s+` at the start of lines following column headers.
+2. **Best-Effort Line 1 Tail Extraction**: Inspects the end of line 1 for anchored classification triples (*Cognizable*, *Bailable*, *Triable Court*). When cleanly matched (270 rows), these fields are extracted and stored.
+3. **Conservative `needs_review` Flagging**: When classification tail values wrap across multiple lines or contain complex proviso conditions (204 rows, e.g. Section 49 where court text wraps), the parser marks `needs_review = True` and leaves those fields null rather than storing hallucinated or misaligned court names.
+4. **Offence Description & Punishment Storage**:
+   *Trade-off Statement*: Offence description and punishment text are not reliably separated by column in the unruled stream; both are present in the stored text, used together for citation and verification purposes. We explicitly avoid forcing an unreliable split between columns 2 and 3.
+
+---
+
+### Dual-Table Direct Lookup Routing (BNSS vs BNS)
+
+#### Routing Logic
+In [`direct_lookup.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/retrieval/direct_lookup.py) and [`hybrid_retriever.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/retrieval/hybrid_retriever.py), `detect_act_and_section_intent()` routes incoming queries across both legal corpora:
+- **Explicit BNS queries** (e.g. `"what is BNS section 64(2)"`, `"BNS s.65(1)"`): Deterministically routed to `fetch_bns_offence_directly()` querying `offence_classification`.
+- **Explicit BNSS queries** (e.g. `"what is section 103 bnss"`): Deterministically routed to `fetch_section_directly()` querying `statute_chunk`.
+- **Ambiguous queries** (e.g. `"section 65"`): Queries `statute_chunk` (BNSS) first; if no match is found, falls back automatically to `offence_classification` (BNS).
