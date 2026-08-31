@@ -11,6 +11,7 @@ import redis.asyncio as aioredis
 from app.core.config import settings
 from app.core.db import init_db, engine, AsyncSessionLocal
 from app.core.logging import logger
+from app.api.search import router as search_router
 
 
 @asynccontextmanager
@@ -30,6 +31,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Include API Routers
+app.include_router(search_router, prefix=settings.API_V1_STR)
 
 
 @app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
