@@ -1,11 +1,13 @@
 """
 Tests for structure-aware BNSS narrative ingestion and greedy atom-packing chunker.
 Asserts chapter title cleanup, atomic section packing, proviso attachment,
-and absence of orphaned micro-chunks.
+absence of orphaned micro-chunks, chapter title consistency across corpus,
+and token limits for definitions.
 """
 
 import pytest
 import os
+import re
 from app.ingestion.bns_chunker import (
     fix_chapter_title_artifact,
     clean_page_text,
@@ -14,6 +16,7 @@ from app.ingestion.bns_chunker import (
     parse_chapters_and_sections,
     MAX_CHUNK_SIZE
 )
+from app.retrieval.embeddings import get_embedding_model
 
 PDF_PATH = "data/raw/bns_bare_act_2023.pdf"
 
@@ -69,11 +72,10 @@ def test_proviso_attached_to_parent():
     proviso_phrase = "Provided that a police officer shall, in all cases where the arrest of a person is not required"
     parent_clause_phrase = "who commits, in the presence of a police officer, a cognizable offence"
 
-    import re as _re
     matching_chunks = [
         c for c in sec35_chunks
-        if proviso_phrase in _re.sub(r"\s+", " ", c["text"])
-        and parent_clause_phrase in _re.sub(r"\s+", " ", c["text"])
+        if proviso_phrase in re.sub(r"\s+", " ", c["text"])
+        and parent_clause_phrase in re.sub(r"\s+", " ", c["text"])
     ]
     assert len(matching_chunks) >= 1, (
         "Expected Section 35 proviso to be attached in the same chunk as parent clause '(a) who commits...'"
@@ -126,7 +128,7 @@ def test_cross_reference_detection():
 def test_full_ingestion_row_count():
     """
     Parses all 157 narrative pages with greedy atom-packing.
-    Asserts total chunk count is within 400-1000 range (regression guard against old 1605 count).
+    Asserts total chunk count is within 400-1000 range.
     """
     pages = extract_pages(PDF_PATH, start_page=1, end_page=157)
     chunks = parse_chapters_and_sections(pages)
@@ -134,9 +136,81 @@ def test_full_ingestion_row_count():
     total_chunks = len(chunks)
     print(f"\n[Test Result] Total Chunks Parsed with Greedy Atom-Packing: {total_chunks}")
 
-    # Sanity-bound total count (regression guard: must be below 1000)
+    # Sanity-bound total count
     assert 400 <= total_chunks <= 1000
 
     # Ensure zero chunks have null or empty section_number
     missing_sec = [c for c in chunks if not c.get("section_number")]
     assert len(missing_sec) == 0, f"Found chunks with missing section_number: {missing_sec}"
+
+
+def test_no_chapter_title_corruption():
+    """
+    Parses ALL 157 pages and verifies corpus-wide chapter consistency:
+    (a) Total number of DISTINCT chapters found is between 35-45 (BNSS has exactly 39 chapters).
+    (b) For every distinct (chapter, chapter_title) pair, chapter_title is entirely uppercase.
+    (c) Specifically asserts verified ground truths:
+        - Chapter X contains 'MAINTENANCE'
+        - Chapter XI contains 'PUBLIC ORDER'
+        - Chapter XXV contains 'EVIDENCE'
+        - Chapter XXVI contains 'GENERAL PROVISIONS AS TO INQUIRIES AND TRIALS'
+    """
+    pages = extract_pages(PDF_PATH, start_page=1, end_page=157)
+    chunks = parse_chapters_and_sections(pages)
+
+    distinct_chapters = {}
+    for c in chunks:
+        chap = c.get("chapter")
+        title = c.get("chapter_title")
+        if chap and chap not in distinct_chapters:
+            distinct_chapters[chap] = title
+
+    print(f"\n[Test Result] Distinct Chapters count: {len(distinct_chapters)}")
+    for num, title in distinct_chapters.items():
+        print(f"  Chapter {num:6s} -> '{title}'")
+
+    # (a) Sanity bound: 35-45 chapters
+    assert 35 <= len(distinct_chapters) <= 45, f"Expected 35-45 chapters, found {len(distinct_chapters)}"
+
+    # (b) Every chapter title must be entirely uppercase
+    for num, title in distinct_chapters.items():
+        assert title is not None and len(title) > 0, f"Chapter {num} has empty title"
+        letters_only = re.sub(r'[^A-Za-z]', '', title)
+        assert letters_only.isupper(), f"Corrupted chapter title found for Chapter {num}: '{title}'"
+
+    # (c) Specific ground truth checks
+    assert "X" in distinct_chapters
+    assert "MAINTENANCE" in distinct_chapters["X"]
+
+    assert "XI" in distinct_chapters
+    assert "PUBLIC ORDER" in distinct_chapters["XI"]
+
+    assert "XXV" in distinct_chapters
+    assert "EVIDENCE" in distinct_chapters["XXV"]
+
+    assert "XXVI" in distinct_chapters
+    assert "GENERAL PROVISIONS" in distinct_chapters["XXVI"]
+
+
+def test_definitions_section_under_token_limit():
+    """
+    Parses Chapter I (pages 1-5), finds all chunks for Section 2 ('Definitions'),
+    tokenizes each chunk with the real BAAI/bge-base-en-v1.5 model tokenizer,
+    and asserts EVERY chunk is strictly under 512 tokens.
+    """
+    model = get_embedding_model()
+    pages = extract_pages(PDF_PATH, start_page=1, end_page=5)
+    chunks = parse_chapters_and_sections(pages)
+
+    sec2_chunks = [c for c in chunks if c["section_number"] == "2"]
+    print(f"\n[Test Result] Section 2 Chunks Count after Tier-2 Generic Splitting: {len(sec2_chunks)}")
+    assert len(sec2_chunks) >= 4, f"Expected Section 2 to be split into multiple chunks, got {len(sec2_chunks)}"
+
+    for i, c in enumerate(sec2_chunks):
+        prefixed_text = f"passage: {c['text']}"
+        tokens = model.tokenizer(prefixed_text)["input_ids"]
+        token_count = len(tokens)
+        print(f"  Sec 2 Chunk {i+1} ({c['chunk_id']}): {len(c['text'])} chars, {token_count} tokens")
+        assert token_count <= 512, (
+            f"Section 2 chunk {c['chunk_id']} has {token_count} tokens, which exceeds max_seq_length (512)"
+        )

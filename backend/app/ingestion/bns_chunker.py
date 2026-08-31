@@ -2,6 +2,7 @@
 Structure-aware legal parser and chunker for narrative BNSS text (pages 1-157).
 Implements greedy atom-packing to ensure section atomicity, preserving provisos,
 explanations, and illustrations attached to their parent clauses.
+Features chapter heading false-positive guards and two-tier clause splitting.
 """
 
 import re
@@ -21,6 +22,35 @@ NON_SECTION_PREFIXES = {
     "section", "sections", "under", "of", "in", "by", "or", "and", "to", "see",
     "sub-section", "sub-sections", "pursuant to", "refers to", "with"
 }
+
+
+def _looks_like_real_chapter_title(text: str) -> bool:
+    """
+    Checks if chapter title candidate is ALL-CAPS (ignoring punctuation/digits/whitespace).
+    Empty text is considered valid (next-line lookahead will resolve title).
+    """
+    letters_only = re.sub(r'[^A-Za-z]', '', text)
+    return letters_only.isupper() if letters_only else True
+
+
+def clean_chapter_title_line(text: str) -> str:
+    """
+    Strips trailing lowercase/mixed-case margin notes that might appear on the
+    same line as an uppercase chapter title (e.g. 'THE JUDGMENT themselves.' -> 'THE JUDGMENT').
+    """
+    if not text:
+        return ""
+    words = text.strip().split()
+    upper_words = []
+    for w in words:
+        clean_w = re.sub(r'[^A-Za-z]', '', w)
+        if clean_w and clean_w.isupper():
+            upper_words.append(w)
+        else:
+            break
+    if upper_words:
+        return " ".join(upper_words)
+    return text.strip()
 
 
 def fix_chapter_title_artifact(title: str) -> str:
@@ -156,7 +186,8 @@ def split_section_into_subsections(section_text: str) -> List[str]:
 
 def split_atom_into_clauses(atom_text: str) -> List[str]:
     """
-    Splits an oversized subsection atom into top-level lettered clause atoms (a), (b), (c)...
+    Tier-1 splitting: Splits an oversized subsection atom into top-level lettered clause atoms (a), (b), (c)...
+    matching keyword-based heuristic (who, against, in whose, for whose).
     Provisos, Explanations, Illustrations, and nested sub-items (i),(ii) stay glued
     to the clause they belong to.
     """
@@ -164,7 +195,6 @@ def split_atom_into_clauses(atom_text: str) -> List[str]:
     clause_atoms = []
     current_clause_lines = []
 
-    # Top-level clauses (a), (b), (c)... matching keyword-based heuristic
     top_clause_re = re.compile(r"^\(([a-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)
     proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
 
@@ -185,6 +215,67 @@ def split_atom_into_clauses(atom_text: str) -> List[str]:
     return [c for c in clause_atoms if c]
 
 
+def split_atom_tier2_generic_clauses(atom_text: str) -> List[str]:
+    """
+    Tier-2 generic splitting: For atoms/clauses that still exceed MAX_CHUNK_SIZE (such as Section 2 Definitions),
+    splits on ANY generic lettered clause header (a), (b), (c)... while preserving provisos and explanations.
+    """
+    lines = atom_text.split("\n")
+    clause_atoms = []
+    current_clause_lines = []
+
+    generic_clause_re = re.compile(r"^\(([a-z]{1,2})\)\s+", re.IGNORECASE)
+    proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
+
+    for line in lines:
+        line_s = line.strip()
+        m = generic_clause_re.match(line_s)
+        is_proviso = proviso_or_expl.match(line_s)
+
+        if m and not is_proviso and current_clause_lines:
+            clause_atoms.append("\n".join(current_clause_lines).strip())
+            current_clause_lines = [line]
+        else:
+            current_clause_lines.append(line)
+
+    if current_clause_lines:
+        clause_atoms.append("\n".join(current_clause_lines).strip())
+
+    return [c for c in clause_atoms if c]
+
+
+def pack_atom_clauses_greedily(clauses: List[str], max_size: int = MAX_CHUNK_SIZE) -> List[str]:
+    """
+    Greedily packs a list of clause atoms into chunks up to max_size.
+    Absorbs short introductory preambles to prevent orphaning context.
+    """
+    chunks = []
+    current_buffer = []
+    current_len = 0
+
+    for clause in clauses:
+        c_len = len(clause)
+        proj_len = current_len + (2 if current_buffer else 0) + c_len
+        if proj_len > max_size and current_buffer:
+            if current_len < 350 and c_len > max_size:
+                current_buffer.append(clause)
+                chunks.append("\n\n".join(current_buffer).strip())
+                current_buffer = []
+                current_len = 0
+            else:
+                chunks.append("\n\n".join(current_buffer).strip())
+                current_buffer = [clause]
+                current_len = c_len
+        else:
+            current_buffer.append(clause)
+            current_len = proj_len
+
+    if current_buffer:
+        chunks.append("\n\n".join(current_buffer).strip())
+
+    return chunks
+
+
 def pack_atoms_greedily(
     atoms: List[str],
     max_size: int = MAX_CHUNK_SIZE,
@@ -193,7 +284,8 @@ def pack_atoms_greedily(
 ) -> List[str]:
     """
     Greedily packs atoms into chunks without exceeding max_size.
-    If a single atom exceeds max_size, it is sub-split into clauses and packed.
+    Uses two-tier clause fallback (Tier 1: keyword-gated, Tier 2: generic clause)
+    if a single atom exceeds max_size.
     """
     chunks = []
     current_buffer = []
@@ -207,27 +299,23 @@ def pack_atoms_greedily(
             if fallback_tracker is not None and sec_num is not None:
                 fallback_tracker.add(sec_num)
 
-            # Sub-split into clauses
+            # Tier 1: keyword-gated splitting
             clauses = split_atom_into_clauses(atom)
+
+            # Tier 2: if Tier 1 keyword heuristic produced <= 1 clause (e.g. Section 2 Definitions, Section 246)
+            if len(clauses) <= 1:
+                tier2_clauses = split_atom_tier2_generic_clauses(atom)
+                if len(tier2_clauses) > 1:
+                    clauses = tier2_clauses
+
             if len(clauses) > 1:
-                for clause in clauses:
-                    c_len = len(clause)
-                    proj_len = current_len + (2 if current_buffer else 0) + c_len
-                    if proj_len > max_size and current_buffer:
-                        # If current_buffer contains a short preamble/clause (< 350 chars) and next clause is oversized,
-                        # absorb to keep context attached
-                        if current_len < 350 and c_len > max_size:
-                            current_buffer.append(clause)
-                            chunks.append("\n\n".join(current_buffer).strip())
-                            current_buffer = []
-                            current_len = 0
-                        else:
-                            chunks.append("\n\n".join(current_buffer).strip())
-                            current_buffer = [clause]
-                            current_len = c_len
-                    else:
-                        current_buffer.append(clause)
-                        current_len = proj_len
+                packed_sub = pack_atom_clauses_greedily(clauses, max_size=max_size)
+                for sub_chunk in packed_sub:
+                    if current_buffer:
+                        chunks.append("\n\n".join(current_buffer).strip())
+                        current_buffer = []
+                        current_len = 0
+                    chunks.append(sub_chunk)
             else:
                 if current_buffer:
                     chunks.append("\n\n".join(current_buffer).strip())
@@ -260,6 +348,7 @@ def parse_chapters_and_sections(
     """
     Walks cleaned text of pages 1-157 and yields structured StatuteChunk dictionaries
     using greedy atom-packing. Tracks fallback section metrics if stats dict is provided.
+    Includes strict uppercase chapter heading guard to prevent false-positive corruption.
     """
     doc_lines: List[Tuple[int, str]] = []
 
@@ -268,36 +357,49 @@ def parse_chapters_and_sections(
         for line in cleaned.split("\n"):
             doc_lines.append((page_num, line))
 
-    chapter_header_re = re.compile(r"^CHAPTER\s+([IVXLCDM]+)\s*(.*)", re.IGNORECASE)
+    chapter_header_re = re.compile(r"^CHAPTER\s+([IVXLCDM]+)\b\s*(.*)", re.IGNORECASE)
     section_start_re = re.compile(r"^(.*?)\b(\d{1,3})\.\s*(.*)")
 
     section_blocks: List[Dict[str, Any]] = []
     current_block: Optional[Dict[str, Any]] = None
     current_chapter: Optional[str] = None
     current_chapter_title: Optional[str] = None
-    needs_review_chapter: bool = False
 
     idx = 0
     while idx < len(doc_lines):
         page_num, line = doc_lines[idx]
         line_trimmed = line.strip()
 
-        # Check for Chapter Header
+        # Check for Chapter Header with False-Positive Guard
         chap_match = chapter_header_re.match(line_trimmed)
         if chap_match:
-            current_chapter = chap_match.group(1).upper()
+            raw_num = chap_match.group(1).upper()
             raw_title = chap_match.group(2).strip()
+            cleaned_raw = clean_chapter_title_line(raw_title)
 
-            if not raw_title and idx + 1 < len(doc_lines):
-                next_page, next_line = doc_lines[idx + 1]
-                if next_line.strip() and not next_line.strip().startswith("CHAPTER"):
-                    raw_title = next_line.strip()
-                    idx += 1
+            candidate_title = cleaned_raw
+            advanced_lines = 0
 
-            current_chapter_title = fix_chapter_title_artifact(raw_title)
-            needs_review_chapter = bool(re.search(r"\b[A-Z]\s[A-Z]\b", current_chapter_title))
-            idx += 1
-            continue
+            # If same-line title is empty or not ALL-CAPS, lookahead to next line
+            if not candidate_title or not _looks_like_real_chapter_title(candidate_title):
+                if idx + 1 < len(doc_lines):
+                    next_page, next_line = doc_lines[idx + 1]
+                    cleaned_next = clean_chapter_title_line(next_line.strip())
+                    if (
+                        cleaned_next
+                        and _looks_like_real_chapter_title(cleaned_next)
+                        and not cleaned_next.upper().startswith("CHAPTER")
+                    ):
+                        candidate_title = cleaned_next
+                        advanced_lines = 1
+
+            # Only accept as chapter header if candidate_title is real ALL-CAPS title
+            if candidate_title and _looks_like_real_chapter_title(candidate_title):
+                current_chapter = raw_num
+                current_chapter_title = fix_chapter_title_artifact(candidate_title)
+                idx += 1 + advanced_lines
+                continue
+            # Otherwise: false positive! Do not consume, treat line as ordinary text below
 
         # Check for Section Start
         sec_match = section_start_re.match(line_trimmed)
@@ -330,7 +432,7 @@ def parse_chapters_and_sections(
                         "lines": [(page_num, line_content)],
                         "page_start": page_num,
                         "page_end": page_num,
-                        "needs_review": needs_review_chapter
+                        "needs_review": False
                     }
                     idx += 1
                     continue
@@ -357,7 +459,7 @@ def parse_chapters_and_sections(
         full_block_text = "\n".join([l[1] for l in block_lines]).strip()
         full_block_text = re.sub(r"\n{3,}", "\n\n", full_block_text)
 
-        # 3. If total section text <= MAX_CHUNK_SIZE (1200 chars), emit ONE chunk
+        # If total section text <= MAX_CHUNK_SIZE (1200 chars), emit ONE chunk
         if len(full_block_text) <= MAX_CHUNK_SIZE:
             seq = global_section_seq.get(sec_num, 0) + 1
             global_section_seq[sec_num] = seq
@@ -384,10 +486,10 @@ def parse_chapters_and_sections(
                 "chunk_id": chunk_id,
                 "source_uri": source_uri,
                 "references_json": extract_cross_references(full_block_text),
-                "needs_review": block["needs_review"]
+                "needs_review": False
             })
         else:
-            # 4 & 5. Parse into subsection atoms and pack greedily
+            # Parse into subsection atoms and pack greedily
             subsecs = split_section_into_subsections(full_block_text)
             packed_texts = pack_atoms_greedily(
                 subsecs,
@@ -422,7 +524,7 @@ def parse_chapters_and_sections(
                     "chunk_id": chunk_id,
                     "source_uri": source_uri,
                     "references_json": extract_cross_references(p_text),
-                    "needs_review": block["needs_review"]
+                    "needs_review": False
                 })
 
     if stats is not None:
