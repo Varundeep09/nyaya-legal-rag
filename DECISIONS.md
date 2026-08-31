@@ -133,3 +133,22 @@ When querying user-uploaded documents, an AI assistant may cite a valid source (
    - Grounding is maintained at the prompt engineering and structural provenance layer, consistent with the evaluation standard applied to statutory citations across the industry.
 
 
+---
+
+### 11. Evaluation Benchmark Nuances & Metric Interpretation
+
+#### 1. Citation Accuracy vs. Retrieval Correctness (Metric-Definition Artifact)
+- **Observation**: In dense-only retrieval benchmarking, "Citation Accuracy" scored 100%, appearing superficially higher than hybrid retrieval before unification.
+- **Why this is a metric artifact**:
+  The citation guard measures **structural grounding** (i.e. whether every citation emitted by the LLM strictly references a chunk that was retrieved and injected into its prompt context). When dense-only retrieval fails to retrieve the correct statutory section and returns adjacent/irrelevant chunks, the model faithfully cites those wrong chunks. Because those wrong chunks *were* in its retrieved context, the citation guard correctly marks them as "structurally grounded".
+- **Conclusion**: Citation Accuracy measures faithful reference to retrieved context, not factual/legal correctness. It must always be evaluated in conjunction with **Recall@5/10** and **MRR**. High citation accuracy with low recall represents faithful hallucination of wrong context, not superior retrieval.
+
+#### 2. Out-of-Domain Refusal Boundary Nuances & Limitations
+- **Observation**: Queries regarding non-procedural/adjacent Indian legal concepts (e.g., Section 80C tax deductions under the Income Tax Act 1961, or ancestral property partition under the Hindu Succession Act) occasionally trigger direct section match or fall close to the dense cosine similarity threshold (~0.68).
+- **Underlying Cause**:
+  Adjacent Indian statutory laws share significant legal vocabulary ("section", "sub-section", "notice", "proceedings", "officer", "statute") with criminal procedural law (BNSS/BNS). A single dense cosine similarity threshold against a criminal procedure corpus cannot cleanly isolate statutory tax queries mentioning section numbers without false positives.
+- **"With Two More Weeks" Solution**:
+  Rather than continually tuning a global heuristic threshold, a production multi-corpus legal system should deploy a lightweight **Domain / Topic Classifier** (e.g. SetFit or a small distilled RoBERTa classifier) at query ingress that classifies the question's legal domain (`criminal_procedure`, `direct_tax`, `family_law`, `out_of_domain`) before routing to retrieval indices.
+
+
+

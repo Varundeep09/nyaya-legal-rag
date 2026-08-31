@@ -1,6 +1,6 @@
 """
-In-process BM25Okapi sparse retrieval index over statute chunks.
-Maintains an in-memory index built from PostgreSQL statute_chunk text.
+In-process BM25Okapi sparse retrieval index over statute chunks and BNS offence classifications.
+Maintains an in-memory index built from PostgreSQL statute_chunk and offence_classification tables.
 Preserves numbers and alphanumeric tokens intact for precise legal cross-referencing.
 """
 
@@ -10,7 +10,7 @@ from rank_bm25 import BM25Okapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.models import StatuteChunk
+from app.core.models import StatuteChunk, OffenceClassification
 from app.core.logging import logger
 
 # Module-level cache for the BM25 index and chunk ID list
@@ -21,7 +21,7 @@ _CACHED_CHUNK_IDS: Optional[List[str]] = None
 def tokenize(text: str) -> List[str]:
     """
     Tokenizes text by converting to lowercase and splitting on non-alphanumeric boundaries.
-    Crucially preserves bare numbers (e.g. section numbers '103', '35') as their own tokens,
+    Crucially preserves bare numbers (e.g. section numbers '103', '35', '65') as their own tokens,
     without stripping digits as stopwords.
     """
     if not text:
@@ -31,27 +31,53 @@ def tokenize(text: str) -> List[str]:
 
 async def build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, List[str]]:
     """
-    Fetches all statute_chunk rows from PostgreSQL, tokenizes their text fields,
-    and builds an in-memory BM25Okapi index.
+    Fetches all statute_chunk and offence_classification rows from PostgreSQL,
+    tokenizes their text fields, and builds a unified in-memory BM25Okapi index.
     
     Returns:
         Tuple of (bm25_index, chunk_id_list) where chunk_id_list[i] maps back
-        to the statute_chunk.chunk_id for BM25 document i.
+        to the chunk_id for BM25 document i.
     """
-    logger.info("Building in-memory BM25 index from statute_chunk records...")
-    stmt = select(StatuteChunk.chunk_id, StatuteChunk.text).order_by(StatuteChunk.id)
-    result = await session.execute(stmt)
-    rows = result.all()
+    logger.info("Building in-memory BM25 index from statute_chunk & offence_classification records...")
+    
+    # 1. Statute Chunks (BNSS)
+    stmt_statute = select(StatuteChunk.chunk_id, StatuteChunk.text).order_by(StatuteChunk.id)
+    res_statute = await session.execute(stmt_statute)
+    rows_statute = res_statute.all()
 
-    if not rows:
-        logger.warning("No statute_chunk records found when building BM25 index.")
+    # 2. Offence Classification (BNS First Schedule)
+    stmt_offence = select(
+        OffenceClassification.id,
+        OffenceClassification.bns_section,
+        OffenceClassification.offence_description,
+        OffenceClassification.punishment,
+        OffenceClassification.cognizable,
+        OffenceClassification.bailable,
+        OffenceClassification.triable_court
+    ).order_by(OffenceClassification.page_number, OffenceClassification.id)
+    res_offence = await session.execute(stmt_offence)
+    rows_offence = res_offence.all()
+
+    chunk_ids = []
+    tokenized_corpus = []
+
+    for r in rows_statute:
+        chunk_ids.append(r[0])
+        tokenized_corpus.append(tokenize(r[1]))
+
+    for r in rows_offence:
+        row_id, sec, desc, pun, cog, bail, court = r
+        cid = f"bns-sched1-{row_id}"
+        full_text = f"BNS Section {sec}: {desc} {pun} {cog or ''} {bail or ''} {court or ''}"
+        chunk_ids.append(cid)
+        tokenized_corpus.append(tokenize(full_text))
+
+    if not chunk_ids:
+        logger.warning("No records found when building BM25 index.")
         return BM25Okapi([[]]), []
 
-    chunk_ids = [r[0] for r in rows]
-    tokenized_corpus = [tokenize(r[1]) for r in rows]
-
     bm25 = BM25Okapi(tokenized_corpus)
-    logger.info("Successfully built BM25 index for %d chunks.", len(chunk_ids))
+    logger.info("Successfully built BM25 index for %d unified chunks (statute + offence schedule).", len(chunk_ids))
     return bm25, chunk_ids
 
 
@@ -89,12 +115,6 @@ async def get_or_build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, Lis
     """
     Returns the cached in-process BM25Okapi index and chunk_id mapping,
     or lazily builds it once from PostgreSQL on first access.
-    
-    NOTE ON CORPUS MUTATION:
-    Since the statutory legal corpus (BNSS bare act) is static after ingestion,
-    this in-memory cache remains valid for the full lifetime of the application process.
-    If the corpus is ever re-ingested or mutated post-startup, this cache must be
-    invalidated via `invalidate_bm25_cache()`.
     """
     global _CACHED_BM25_INDEX, _CACHED_CHUNK_IDS
     if _CACHED_BM25_INDEX is None or _CACHED_CHUNK_IDS is None:

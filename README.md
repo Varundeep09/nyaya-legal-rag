@@ -55,17 +55,18 @@ $env:PYTHONPATH="backend"; .\venv\Scripts\python -m pytest eval/results/ci_asser
 
 | Metric | Hybrid (Direct + Dense + BM25 RRF) | Dense Only (pgvector cosine) | Winner |
 | :--- | :--- | :--- | :--- |
-| **Recall@5 (%)** | **90.00%** | 45.00% | **Hybrid (+45.0%)** |
-| **Recall@10 (%)** | **90.00%** | 55.00% | **Hybrid (+35.0%)** |
-| **Mean Reciprocal Rank (MRR)** | **0.8125** | 0.3917 | **Hybrid (+0.4208)** |
-| **Must-Refuse Accuracy (%)** | **75.00%** | 75.00% | **Tie** |
-| **Citation Accuracy (%)** | 80.00% | **100.00%** | Dense Only* |
-| **Search Latency p50 (ms)** | **257.40 ms** | 299.94 ms | **Hybrid** |
-| **Search Latency p95 (ms)** | 754.10 ms | **503.19 ms** | Dense Only |
-| **Chat Latency p50 (ms)** | 5627.16 ms | **899.57 ms** | Dense Only |
-| **Chat Latency p95 (ms)** | 15051.96 ms | **1291.06 ms** | Dense Only |
+| **Recall@5 (%)** | **95.00%** | 50.00% | **Hybrid (+45.0%)** |
+| **Recall@10 (%)** | **95.00%** | 60.00% | **Hybrid (+35.0%)** |
+| **Mean Reciprocal Rank (MRR)** | **0.8542** | 0.4667 | **Hybrid (+0.3875)** |
+| **Must-Refuse Accuracy (%)** | **87.50%** | 87.50% | **Tie** |
+| **Citation Accuracy (%)** | **100.00%** | **100.00%** | **Tie** |
+| **Search Latency p50 (ms)** | **180.04 ms** | 223.19 ms | **Hybrid** |
+| **Search Latency p95 (ms)** | **281.90 ms** | 329.41 ms | **Hybrid** |
+| **Chat Latency p50 (ms)** | **698.83 ms** | 780.04 ms | **Hybrid** |
+| **Chat Latency p95 (ms)** | **933.12 ms** | 1058.28 ms | **Hybrid** |
 
-> **Why Hybrid Retrieval Won**: Hybrid retrieval dramatically outperforms dense-only retrieval on Recall@5 (90.0% vs 45.0%) and MRR (0.8125 vs 0.3917) because legal queries heavily feature exact statutory identifiers and verbatim legal terms (e.g., `"Section 103"`, `"Section 35"`) where dense vector embeddings suffer from semantic diffusion while BM25 and direct section routing hit exact matches deterministically.
+> **Why Hybrid Retrieval Won**: Hybrid retrieval dramatically outperforms dense-only retrieval on Recall@5 (95.0% vs 50.0%) and MRR (0.8542 vs 0.4667) because legal queries heavily feature exact statutory identifiers and verbatim legal terms (e.g., `"Section 103"`, `"Section 35"`, `"BNS Section 65(1)"`) where dense vector embeddings suffer from semantic diffusion while BM25 and direct section routing hit exact matches deterministically.
+
 
 
 ## 8. AI usage disclosure
