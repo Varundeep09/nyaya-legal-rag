@@ -72,3 +72,43 @@ In [`direct_lookup.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend
 - **Explicit BNS queries** (e.g. `"what is BNS section 64(2)"`, `"BNS s.65(1)"`): Deterministically routed to `fetch_bns_offence_directly()` querying `offence_classification`.
 - **Explicit BNSS queries** (e.g. `"what is section 103 bnss"`): Deterministically routed to `fetch_section_directly()` querying `statute_chunk`.
 - **Ambiguous queries** (e.g. `"section 65"`): Queries `statute_chunk` (BNSS) first; if no match is found, falls back automatically to `offence_classification` (BNS).
+
+---
+
+### Empirical Calibration of Refusal Threshold & Citation Guard Contract
+
+#### 1. Calibration Experiment Data (12 Queries x Scores)
+To establish a principled, non-guessed refusal threshold, we executed a comparative evaluation of 6 representative on-topic legal queries vs 6 completely off-topic queries against the active PostgreSQL database:
+
+| Category | Query | Method | RRF Score | Dense Cosine Sim | BM25 Score | Refusal Outcome |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **ON-TOPIC** | `arrest without warrant` | `hybrid_rrf` | 0.032002 | **0.7606** | 9.7634 | Allowed |
+| **ON-TOPIC** | `bail conditions` | `hybrid_rrf` | 0.031514 | **0.7751** | 5.7897 | Allowed |
+| **ON-TOPIC** | `what is section 103` | `direct_lookup` | 1.000000 | N/A | N/A | Allowed (Bypass) |
+| **ON-TOPIC** | `rape punishment BNS` | `hybrid_rrf` | 0.032258 | **0.7037** | 7.1871 | Allowed |
+| **ON-TOPIC** | `charge framing procedure` | `hybrid_rrf` | 0.032787 | **0.7027** | 8.9914 | Allowed |
+| **ON-TOPIC** | `plea bargaining eligibility` | `hybrid_rrf` | 0.032787 | **0.7896** | 14.4388 | Allowed |
+| **OFF-TOPIC** | `what is the punishment for jaywalking in Ohio` | `hybrid_rrf` | 0.028283 | **0.6319** | 11.6343 | **Refused** |
+| **OFF-TOPIC** | `how to bake a chocolate chip cookie at home` | `hybrid_rrf` | 0.016393 | **0.4970** | 0.0000 | **Refused** |
+| **OFF-TOPIC** | `IRS federal income tax deduction rules in the United States` | `hybrid_rrf` | 0.028039 | **0.5790** | 9.1955 | **Refused** |
+| **OFF-TOPIC** | `what is the weather like in Paris in spring` | `hybrid_rrf` | 0.028205 | **0.5002** | 13.8360 | **Refused** |
+| **OFF-TOPIC** | `how does a quantum computer factor prime numbers` | `hybrid_rrf` | 0.031778 | **0.5273** | 8.0850 | **Refused** |
+| **OFF-TOPIC** | `what's the best pizza topping` | `hybrid_rrf` | 0.016393 | **0.5019** | 0.0000 | **Refused** |
+
+#### 2. Key Findings & Threshold Justification
+1. **Dense Cosine Similarity is the Primary Discriminator**:
+   - BM25 scores for off-topic queries frequently exhibit deceptive spikes (e.g. `13.83` on Paris weather or `11.63` on Ohio jaywalking) caused by keyword overlap on generic tokens like `punishment`, `for`, `in`.
+   - In contrast, BGE-base-en-v1.5 dense cosine similarity demonstrates a clear bimodal separation:
+     - On-topic cluster: **`0.7027` to `0.7896`** (Mean: `0.746`)
+     - Off-topic cluster: **`0.4970` to `0.6319`** (Mean: `0.540`)
+2. **Decision Boundary**:
+   We set `DENSE_SIMILARITY_THRESHOLD = 0.68`. Any hybrid retrieval query whose top retrieved chunk has a dense cosine similarity below `0.68` is deterministically refused without invoking the LLM.
+3. **Direct Lookup Bypass**:
+   Deterministic direct lookups (`method == "direct_lookup"`) bypass threshold gating entirely.
+
+#### 3. Post-Generation Citation Guard Architecture
+Even with strict system prompts, LLMs can extrapolate ungrounded statutory citations. [`citation_guard.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/llm/citation_guard.py) implements runtime validation:
+- Extracts all citation tokens `[BNSS s.X(Y)]` and `[BNS s.X(Y)]`.
+- Validates them strictly against the section numbers present in the retrieved chunks injected for that specific request.
+- Strips any hallucinated citation tokens, logs an alert, and emits a `guard_warning` SSE event.
+

@@ -178,7 +178,7 @@ async def fetch_bns_offence_directly(
             "section_title": f"BNS Section {row.bns_section}",
             "subsection": None,
             "clause": None,
-            "text": f"BNS Section {row.bns_section}: {row.offence_description}\nPunishment: {row.punishment}\nClassification: {row.cognizable or 'N/A'}, {row.bailable or 'N/A'}, Triable by: {row.triable_court or 'N/A'}",
+            "text": f"BNS Section {row.bns_section}: {row.offence_description}\nClassification: {row.cognizable or 'N/A'}, {row.bailable or 'N/A'}, Triable by: {row.triable_court or 'N/A'}",
             "page_start": row.page_number,
             "page_end": row.page_number,
             "has_proviso": False,
