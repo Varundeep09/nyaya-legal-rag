@@ -2,7 +2,7 @@
 Tests for structure-aware BNSS narrative ingestion and greedy atom-packing chunker.
 Asserts chapter title cleanup, atomic section packing, proviso attachment,
 absence of orphaned micro-chunks, chapter title consistency across corpus,
-and token limits for definitions.
+token limits for definitions, recovery of sections 104/105, and monotonic section sequence.
 """
 
 import pytest
@@ -214,3 +214,58 @@ def test_definitions_section_under_token_limit():
         assert token_count <= 512, (
             f"Section 2 chunk {c['chunk_id']} has {token_count} tokens, which exceeds max_seq_length (512)"
         )
+
+
+def test_section_104_105_not_swallowed():
+    """
+    Asserts that sections 104 and 105 are recovered as distinct standalone chunks
+    and are not swallowed into section 103.
+    """
+    pages = extract_pages(PDF_PATH, start_page=28, end_page=33)
+    chunks = parse_chapters_and_sections(pages)
+
+    sec103_chunks = [c for c in chunks if c["section_number"] == "103"]
+    sec104_chunks = [c for c in chunks if c["section_number"] == "104"]
+    sec105_chunks = [c for c in chunks if c["section_number"] == "105"]
+    sec106_chunks = [c for c in chunks if c["section_number"] == "106"]
+
+    assert len(sec104_chunks) >= 1, "Expected section 104 to exist as its own chunk"
+    assert len(sec105_chunks) >= 1, "Expected section 105 to exist as its own chunk"
+    assert len(sec106_chunks) >= 1, "Expected section 106 to exist as its own chunk"
+
+    # Section 103 chunks must NOT contain Section 104 header text
+    for c in sec103_chunks:
+        assert "104. When, in the execution" not in c["text"]
+        assert "105. The process of conducting" not in c["text"]
+
+    # Section 104 chunk content verification
+    assert "When, in the execution of a search-warrant" in sec104_chunks[0]["text"]
+
+    # Section 105 chunk content verification
+    assert "The process of conducting search of a place" in sec105_chunks[0]["text"]
+
+
+def test_no_backward_section_regression():
+    """
+    Walks the full parsed corpus and asserts that section numbers are monotonically
+    non-decreasing from 1 to 531 with 0 missing integer gaps.
+    """
+    pages = extract_pages(PDF_PATH, start_page=1, end_page=157)
+    chunks = parse_chapters_and_sections(pages)
+
+    seen_sections = []
+    last_sec = 0
+    for c in chunks:
+        sec_num = int(c["section_number"])
+        if sec_num != last_sec:
+            assert sec_num > last_sec, f"Backward section regression detected: {sec_num} after {last_sec}"
+            seen_sections.append(sec_num)
+            last_sec = sec_num
+
+    print(f"\n[Test Result] Total Distinct Sections Parsed: {len(seen_sections)}")
+    assert min(seen_sections) == 1
+    assert max(seen_sections) == 531
+
+    expected_range = set(range(1, 532))
+    missing_gaps = sorted(list(expected_range - set(seen_sections)))
+    assert len(missing_gaps) == 0, f"Found missing section gaps in corpus: {missing_gaps}"

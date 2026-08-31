@@ -360,10 +360,15 @@ def parse_chapters_and_sections(
     chapter_header_re = re.compile(r"^CHAPTER\s+([IVXLCDM]+)\b\s*(.*)", re.IGNORECASE)
     section_start_re = re.compile(r"^(.*?)\b(\d{1,3})\.\s*(.*)")
 
+    CROSS_REF_TRIGGER_WORDS = {
+        "section", "sections", "sub-section", "sub-sections", "clause", "clauses"
+    }
+
     section_blocks: List[Dict[str, Any]] = []
     current_block: Optional[Dict[str, Any]] = None
     current_chapter: Optional[str] = None
     current_chapter_title: Optional[str] = None
+    running_max_sec: int = 0
 
     idx = 0
     while idx < len(doc_lines):
@@ -410,10 +415,21 @@ def parse_chapters_and_sections(
 
             sec_val = int(sec_num_str)
             if 1 <= sec_val <= 531:
-                prefix_words = prefix.lower().split()
-                last_prefix_word = prefix_words[-1] if prefix_words else ""
+                prefix_words = set(re.findall(r'[a-zA-Z\-]+', prefix.lower()))
 
-                if len(prefix) < 60 and last_prefix_word not in NON_SECTION_PREFIXES:
+                is_cross_ref_word = bool(prefix_words.intersection(CROSS_REF_TRIGGER_WORDS))
+                is_backward_jump = sec_val <= running_max_sec
+                is_too_far_forward = (running_max_sec > 0 and sec_val > running_max_sec + 5)
+
+                accept = False
+                if not is_cross_ref_word and len(prefix) < 60:
+                    if not prefix:  # clean line start
+                        accept = (sec_val > running_max_sec) and (sec_val <= running_max_sec + 10 or running_max_sec == 0)
+                    else:
+                        accept = not is_backward_jump and not is_too_far_forward
+
+                if accept:
+                    running_max_sec = sec_val
                     sec_title = prefix if (prefix and not prefix.endswith(".")) else f"Section {sec_num_str}"
                     if prefix.endswith("."):
                         sec_title = prefix[:-1]
