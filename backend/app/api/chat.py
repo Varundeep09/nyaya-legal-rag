@@ -110,7 +110,9 @@ async def chat_event_stream(message: str, session_id: str) -> AsyncGenerator[str
         c.get("score", 0.0) >= 0.45 for c in user_doc_chunks
     )
 
-    if not user_doc_has_strong_match and should_refuse(statute_chunks):
+    if not user_doc_has_strong_match and should_refuse(
+        statute_chunks, query_text=message
+    ):
         logger.info("Chat query refused: '%s' (session '%s')", message, session_id)
         QUERY_REFUSALS.inc()
 

@@ -31,6 +31,16 @@ def detect_act_and_section_intent(query: str) -> Optional[Dict[str, str]]:
     is_bnss = bool(re.search(r"\bbnss\b|\bbharatiya\s+nagarik\s+suraksha\b", q))
     is_bns = bool(re.search(r"\bbns\b|\bbharatiya\s+nyaya\b", q)) and not is_bnss
 
+    # Exclude queries explicitly targeting non-corpus statutes unless BNSS/BNS is also specified
+    is_other_act = bool(
+        re.search(
+            r"\b(?:income\s+tax|companies|contract|hindu\s+succession|transfer\s+of\s+property|factories|motor\s+vehicles|gst|sebi|arbitration|ipc|crpc|cpc)\b",
+            q,
+        )
+    ) and not (is_bnss or is_bns)
+    if is_other_act:
+        return None
+
     # Pattern with section number and optional subsection (e.g., 64(2), 65(1), 103, 103(1))
     p = re.compile(
         r"(?:(?:what\s+(?:is|does)\s+)?(?:the\s+)?(?:bns\s+|bnss\s+)?(?:section|sec\.?|s\.?)\s*(\d{1,3}(?:\([0-9a-z]+\)){0,2})|"

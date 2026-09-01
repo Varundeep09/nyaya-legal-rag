@@ -396,6 +396,77 @@ async def hybrid_search(
     # 2. Run Dense & Sparse Search
     candidate_depth = max(top_k * 3, 30)
 
+    if retrieval_mode == "bm25_only":
+        bm25_index, chunk_id_list = await get_or_build_bm25_index(session)
+        bm25_all = search_bm25(
+            bm25_index, chunk_id_list, query_text, top_k=len(chunk_id_list)
+        )
+        if chapter_filter or act_filter or section_filter:
+            valid_chunk_ids: Set[str] = set()
+            filter_stmt = select(StatuteChunk.chunk_id)
+            if chapter_filter:
+                filter_stmt = filter_stmt.where(StatuteChunk.chapter == chapter_filter)
+            if act_filter:
+                filter_stmt = filter_stmt.where(
+                    or_(
+                        StatuteChunk.act == act_filter,
+                        StatuteChunk.act_short == act_filter,
+                    )
+                )
+            if section_filter:
+                filter_stmt = filter_stmt.where(
+                    StatuteChunk.section_number == str(section_filter)
+                )
+            valid_ids_res = await session.execute(filter_stmt)
+            valid_chunk_ids.update(valid_ids_res.scalars().all())
+
+            allow_offence = True
+            if chapter_filter and chapter_filter not in (
+                "FIRST SCHEDULE",
+                "THE FIRST SCHEDULE",
+                "CLASSIFICATION OF OFFENCES",
+                "1",
+                "I",
+            ):
+                allow_offence = False
+            if act_filter and act_filter not in (
+                "BNS",
+                "Bharatiya Nyaya Sanhita, 2023",
+                "Bharatiya Nyaya Sanhita",
+            ):
+                allow_offence = False
+            if allow_offence:
+                offence_filter_stmt = select(OffenceClassification.id)
+                if section_filter:
+                    offence_filter_stmt = offence_filter_stmt.where(
+                        or_(
+                            OffenceClassification.bns_section == str(section_filter),
+                            OffenceClassification.bns_section.ilike(
+                                f"{section_filter}(%)"
+                            ),
+                        )
+                    )
+                res_off = await session.execute(offence_filter_stmt)
+                for row_id in res_off.scalars().all():
+                    valid_chunk_ids.add(f"bns-sched1-{row_id}")
+            bm25_results = [
+                (cid, sc) for cid, sc in bm25_all if cid in valid_chunk_ids
+            ][:top_k]
+        else:
+            bm25_results = bm25_all[:top_k]
+
+        if not bm25_results:
+            return []
+
+        top_chunk_ids = [cid for cid, _ in bm25_results]
+        meta_map = {
+            cid: {"bm25_score": score, "bm25_rank": rank}
+            for rank, (cid, score) in enumerate(bm25_results, start=1)
+        }
+        return await _hydrate_chunks(
+            session, top_chunk_ids, meta_map, retrieval_method="bm25_only"
+        )
+
     # Dense Search
     dense_results = await dense_search(
         session=session,

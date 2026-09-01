@@ -141,3 +141,44 @@ def test_rrf_fusion_math():
 
     assert fused[3]["chunk_id"] == "doc_C"
     assert pytest.approx(fused[3]["rrf_score"], rel=1e-5) == expected_score_c
+
+
+def test_non_corpus_statute_gating_regression():
+    """
+    Regression test for non-corpus statute direct lookup leak.
+    Asserts non-corpus statute queries (Income Tax Act, Contract Act) return None
+    from intent detection and trigger should_refuse == True.
+    Asserts BNSS, BNS, and ambiguous queries retain correct intent detection.
+    """
+    from app.retrieval.direct_lookup import detect_act_and_section_intent
+    from app.retrieval.refusal import should_refuse
+
+    # 1. Non-corpus statute queries MUST return None and trigger refusal
+    q1 = "What is section 80C of the Income Tax Act?"
+    assert detect_act_and_section_intent(q1) is None
+    assert should_refuse([], query_text=q1) is True
+
+    q2 = "Explain section 420 of the Indian Contract Act."
+    assert detect_act_and_section_intent(q2) is None
+    assert should_refuse([], query_text=q2) is True
+
+    # 2. Corpus BNSS query MUST return BNSS intent and NOT refuse
+    q3 = "What does section 35 of BNSS provide?"
+    intent3 = detect_act_and_section_intent(q3)
+    assert intent3 is not None
+    assert intent3["act"] == "BNSS"
+    assert intent3["base_section"] == "35"
+
+    # 3. Corpus BNS query MUST return BNS intent
+    q4 = "What does section 65 of BNS mean?"
+    intent4 = detect_act_and_section_intent(q4)
+    assert intent4 is not None
+    assert intent4["act"] == "BNS"
+    assert intent4["base_section"] == "65"
+
+    # 4. Bare section query MUST return AMBIGUOUS intent
+    q5 = "Tell me about section 35."
+    intent5 = detect_act_and_section_intent(q5)
+    assert intent5 is not None
+    assert intent5["act"] == "AMBIGUOUS"
+    assert intent5["base_section"] == "35"

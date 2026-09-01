@@ -34,7 +34,8 @@ class SearchRequest(BaseModel):
         default=None, description="Optional section number filter (e.g. '103')"
     )
     retrieval_mode: Optional[str] = Field(
-        default="hybrid", description="Retrieval mode: 'hybrid' or 'dense_only'"
+        default="hybrid",
+        description="Retrieval mode: 'hybrid', 'dense_only', or 'bm25_only'",
     )
 
 
