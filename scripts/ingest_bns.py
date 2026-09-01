@@ -42,7 +42,7 @@ async def run_ingestion(with_embeddings: bool = False):
     print("\n[2/4] Executing Statute Chunk Ingestion (Pages 1-157)...")
     ingestion_stats = {}
     async with AsyncSessionLocal() as session:
-        total_loaded = await load_statute_chunks_to_db(session, stats=ingestion_stats)
+        await load_statute_chunks_to_db(session, stats=ingestion_stats)
 
     # 3. Query Database Statistics & Summarize
     print("\n[3/4] Querying Database Summary Metrics & Chunk Risk Analysis...")
@@ -53,14 +53,16 @@ async def run_ingestion(with_embeddings: bool = False):
 
         # Provisos count
         result_proviso = await session.execute(
-            select(func.count(StatuteChunk.id)).where(StatuteChunk.has_proviso == True)
+            select(func.count(StatuteChunk.id)).where(
+                StatuteChunk.has_proviso.is_(True)
+            )
         )
         proviso_count = result_proviso.scalar()
 
         # Illustrations count
         result_illus = await session.execute(
             select(func.count(StatuteChunk.id)).where(
-                StatuteChunk.has_illustration == True
+                StatuteChunk.has_illustration.is_(True)
             )
         )
         illus_count = result_illus.scalar()
@@ -75,7 +77,9 @@ async def run_ingestion(with_embeddings: bool = False):
 
         # Needs review count
         result_review = await session.execute(
-            select(func.count(StatuteChunk.id)).where(StatuteChunk.needs_review == True)
+            select(func.count(StatuteChunk.id)).where(
+                StatuteChunk.needs_review.is_(True)
+            )
         )
         needs_review_count = result_review.scalar()
 
@@ -85,13 +89,13 @@ async def run_ingestion(with_embeddings: bool = False):
         ).order_by(func.length(StatuteChunk.text))
         all_lengths = (await session.execute(all_lengths_stmt)).all()
 
-        lengths_only = [l[1] for l in all_lengths]
+        lengths_only = [ln[1] for ln in all_lengths]
         max_chunk_len = max(lengths_only) if lengths_only else 0
         p95_idx = int(len(lengths_only) * 0.95) if lengths_only else 0
         p95_chunk_len = lengths_only[p95_idx] if lengths_only else 0
 
         # Chunks exceeding 2000 characters
-        oversized_chunks = [(l[0], l[1]) for l in all_lengths if l[1] > 2000]
+        oversized_chunks = [(ln[0], ln[1]) for ln in all_lengths if ln[1] > 2000]
 
         # Fetch sample chunks for display
         sample_stmt = select(
@@ -144,7 +148,7 @@ async def run_ingestion(with_embeddings: bool = False):
         async with AsyncSessionLocal() as session:
             final_review_res = await session.execute(
                 select(func.count(StatuteChunk.id)).where(
-                    StatuteChunk.needs_review == True
+                    StatuteChunk.needs_review.is_(True)
                 )
             )
             final_needs_review = final_review_res.scalar()

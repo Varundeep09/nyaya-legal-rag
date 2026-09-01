@@ -16,8 +16,8 @@ sys.path.insert(
     ),
 )
 
-import google.generativeai as genai
-from app.core.config import settings
+import google.generativeai as genai  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 
 def discover_gemini_models():

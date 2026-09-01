@@ -31,7 +31,6 @@ from app.ingestion.schedule_loader import load_offence_classification_to_db
 from app.retrieval.embeddings import (
     embed_passages,
     check_token_length,
-    get_embedding_model,
 )
 
 
@@ -40,7 +39,6 @@ async def populate_schedule_embeddings(batch_size: int = 32):
     Computes BGE embeddings for all OffenceClassification rows with NULL embeddings.
     """
     logger.info("Populating embeddings for OffenceClassification records...")
-    model = get_embedding_model()
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -139,7 +137,7 @@ async def run_schedule_ingestion(with_embeddings: bool = False):
 
         result_review = await session.execute(
             select(func.count(OffenceClassification.id)).where(
-                OffenceClassification.needs_review == True
+                OffenceClassification.needs_review.is_(True)
             )
         )
         review_count = result_review.scalar()
