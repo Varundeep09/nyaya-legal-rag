@@ -14,6 +14,8 @@ from app.core.logging import logger
 from app.api.search import router as search_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.api.forms import router as forms_router
+from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -34,10 +36,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add CORS Middleware for local frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Session-ID"],
+)
+
 # Include API Routers
 app.include_router(search_router, prefix=settings.API_V1_STR)
 app.include_router(chat_router, prefix=settings.API_V1_STR)
 app.include_router(documents_router, prefix=settings.API_V1_STR)
+app.include_router(forms_router, prefix=settings.API_V1_STR)
+
 
 
 

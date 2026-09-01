@@ -224,3 +224,72 @@ async def chat_endpoint(
             "X-Session-ID": effective_session_id
         }
     )
+
+
+@router.get("/conversations")
+async def list_conversations():
+    """Returns all chat sessions ordered by creation date."""
+    async with AsyncSessionLocal() as session:
+        stmt = select(ChatSession).order_by(ChatSession.created_at.desc())
+        res = await session.execute(stmt)
+        sessions = res.scalars().all()
+        
+        convos = []
+        for s in sessions:
+            msg_stmt = (
+                select(ChatMessage)
+                .where(ChatMessage.session_id == s.id)
+                .order_by(ChatMessage.created_at.desc())
+                .limit(1)
+            )
+            msg_res = await session.execute(msg_stmt)
+            last_msg = msg_res.scalar_one_or_none()
+            convos.append({
+                "session_id": s.id,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "last_message": last_msg.content[:60] if last_msg else "New Chat"
+            })
+        return convos
+
+
+@router.get("/conversations/{session_id}/messages")
+async def get_conversation_messages(session_id: str):
+    """Returns message history for a specific conversation session."""
+    async with AsyncSessionLocal() as session:
+        stmt = (
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.asc())
+        )
+        res = await session.execute(stmt)
+        msgs = res.scalars().all()
+        return [
+            {
+                "id": str(m.id),
+                "role": m.role,
+                "content": m.content,
+                "citations": m.citations_json,
+                "created_at": m.created_at.isoformat() if m.created_at else None
+            }
+            for m in msgs
+        ]
+
+
+@router.delete("/conversations/{session_id}")
+async def delete_conversation(session_id: str):
+    """Deletes a chat conversation and all its messages."""
+    async with AsyncSessionLocal() as session:
+        # Delete associated messages
+        msg_stmt = select(ChatMessage).where(ChatMessage.session_id == session_id)
+        msg_res = await session.execute(msg_stmt)
+        for m in msg_res.scalars().all():
+            await session.delete(m)
+
+        stmt = select(ChatSession).where(ChatSession.id == session_id)
+        res = await session.execute(stmt)
+        s = res.scalar_one_or_none()
+        if s:
+            await session.delete(s)
+        await session.commit()
+        return {"status": "deleted", "session_id": session_id}
+
