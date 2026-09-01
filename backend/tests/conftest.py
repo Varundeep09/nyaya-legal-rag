@@ -6,14 +6,24 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 import pytest_asyncio  # noqa: E402
-from sqlalchemy.ext.asyncio import (
+from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-)  # noqa: E402
+)
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
+from app.core.db import init_db  # noqa: E402
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def setup_test_db():
+    """Initializes the database schema and pgvector extension if DB is reachable."""
+    try:
+        await init_db()
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture
