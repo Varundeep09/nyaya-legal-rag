@@ -17,12 +17,24 @@ router = APIRouter(prefix="", tags=["Search"])
 
 
 class SearchRequest(BaseModel):
-    query: str = Field(..., min_length=1, description="Legal search query or section question")
-    top_k: int = Field(default=10, ge=1, le=50, description="Number of results to retrieve")
-    chapter: Optional[str] = Field(default=None, description="Optional Roman numeral chapter filter (e.g. 'XXXV')")
-    act: Optional[str] = Field(default=None, description="Optional act name or short code filter (e.g. 'BNSS')")
-    section: Optional[str] = Field(default=None, description="Optional section number filter (e.g. '103')")
-    retrieval_mode: Optional[str] = Field(default="hybrid", description="Retrieval mode: 'hybrid' or 'dense_only'")
+    query: str = Field(
+        ..., min_length=1, description="Legal search query or section question"
+    )
+    top_k: int = Field(
+        default=10, ge=1, le=50, description="Number of results to retrieve"
+    )
+    chapter: Optional[str] = Field(
+        default=None, description="Optional Roman numeral chapter filter (e.g. 'XXXV')"
+    )
+    act: Optional[str] = Field(
+        default=None, description="Optional act name or short code filter (e.g. 'BNSS')"
+    )
+    section: Optional[str] = Field(
+        default=None, description="Optional section number filter (e.g. '103')"
+    )
+    retrieval_mode: Optional[str] = Field(
+        default="hybrid", description="Retrieval mode: 'hybrid' or 'dense_only'"
+    )
 
 
 class SearchResponse(BaseModel):
@@ -34,8 +46,7 @@ class SearchResponse(BaseModel):
 
 @router.post("/search", response_model=SearchResponse)
 async def search_endpoint(
-    request: SearchRequest,
-    session: AsyncSession = Depends(get_db)
+    request: SearchRequest, session: AsyncSession = Depends(get_db)
 ):
     """
     Hybrid Search API endpoint:
@@ -54,7 +65,7 @@ async def search_endpoint(
             chapter_filter=request.chapter,
             act_filter=request.act,
             section_filter=request.section,
-            retrieval_mode=request.retrieval_mode or "hybrid"
+            retrieval_mode=request.retrieval_mode or "hybrid",
         )
         latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
@@ -65,11 +76,13 @@ async def search_endpoint(
             query=request.query,
             retrieval_method=retrieval_method,
             results=results,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
     except Exception as e:
-        logger.error(f"Search endpoint error for query '{request.query}': {e}", exc_info=True)
+        logger.error(
+            f"Search endpoint error for query '{request.query}': {e}", exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error executing search: {str(e)}"
+            detail=f"Error executing search: {str(e)}",
         )

@@ -8,7 +8,7 @@ import os
 import re
 import hashlib
 import unicodedata
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import pdfplumber
 import fitz  # PyMuPDF
 
@@ -38,9 +38,9 @@ def clean_enabling_section(raw_line: str) -> str:
     elif raw.startswith("(") and raw.endswith(")"):
         raw = raw[1:-1].strip()
     elif raw.startswith("[") and "]" in raw:
-        raw = raw[1:raw.rfind("]")].strip()
+        raw = raw[1 : raw.rfind("]")].strip()
     elif raw.startswith("(") and ")" in raw:
-        raw = raw[1:raw.rfind(")")].strip()
+        raw = raw[1 : raw.rfind(")")].strip()
 
     m = re.search(r"See\s+sections?\s+(.*)", raw, re.IGNORECASE)
     if m:
@@ -51,21 +51,24 @@ def clean_enabling_section(raw_line: str) -> str:
 
 
 def detect_form_boundaries(
-    pdf_path: str,
-    start_page: int = 190,
-    end_page: int = 249
+    pdf_path: str, start_page: int = 190, end_page: int = 249
 ) -> List[Dict[str, Any]]:
     """
     Detects all 58 statutory form boundaries in pages start_page..end_page of the PDF.
     Scrapes the title dynamically from the all-caps line following 'FORM No.<N>'.
-    
+
     Zero hardcoded title dictionaries are used.
-    
+
     Returns:
         List of dicts with: form_number, title, enabling_section, page_start, page_end,
         extraction_confidence, needs_review.
     """
-    logger.info("Scanning PDF '%s' for statutory forms between pages %d and %d...", pdf_path, start_page, end_page)
+    logger.info(
+        "Scanning PDF '%s' for statutory forms between pages %d and %d...",
+        pdf_path,
+        start_page,
+        end_page,
+    )
     form_header_re = re.compile(r"^FORM\s+No\.?\s*(\d+)", re.IGNORECASE)
 
     raw_forms = []
@@ -77,7 +80,7 @@ def detect_form_boundaries(
         for page_idx in range(start_page - 1, actual_end):
             page = pdf.pages[page_idx]
             text = page.extract_text() or ""
-            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
             page_num = page_idx + 1
 
             # OCR / text quality check
@@ -85,7 +88,8 @@ def detect_form_boundaries(
             if len(words) < 10:
                 logger.warning(
                     "Page %d has sparse text (%d words). May require OCR fallback.",
-                    page_num, len(words)
+                    page_num,
+                    len(words),
                 )
 
             for i, line in enumerate(lines):
@@ -102,7 +106,11 @@ def detect_form_boundaries(
                             enabling_sec = clean_enabling_section(cand)
                             break
                         # Detect all-caps title lines
-                        if cand.isupper() or (len(cand) > 3 and sum(1 for c in cand if c.isupper()) / max(len(cand), 1) > 0.5):
+                        if cand.isupper() or (
+                            len(cand) > 3
+                            and sum(1 for c in cand if c.isupper()) / max(len(cand), 1)
+                            > 0.5
+                        ):
                             title_lines.append(cand)
                         elif not title_lines:
                             title_lines.append(cand)
@@ -120,15 +128,17 @@ def detect_form_boundaries(
                     elif not enabling_sec:
                         confidence = 0.85
 
-                    raw_forms.append({
-                        "form_number": form_num,
-                        "title": scraped_title,
-                        "enabling_section": enabling_sec or None,
-                        "page_start": page_num,
-                        "line_idx": i,
-                        "extraction_confidence": round(confidence, 2),
-                        "needs_review": needs_review
-                    })
+                    raw_forms.append(
+                        {
+                            "form_number": form_num,
+                            "title": scraped_title,
+                            "enabling_section": enabling_sec or None,
+                            "page_start": page_num,
+                            "line_idx": i,
+                            "extraction_confidence": round(confidence, 2),
+                            "needs_review": needs_review,
+                        }
+                    )
 
     # Sort forms sequentially by form_number
     raw_forms.sort(key=lambda x: (x["form_number"], x["page_start"]))
@@ -153,7 +163,12 @@ def detect_form_boundaries(
         else:
             current["page_end"] = end_page
 
-    logger.info("Successfully detected %d statutory forms across pages %d-%d.", len(unique_forms), start_page, end_page)
+    logger.info(
+        "Successfully detected %d statutory forms across pages %d-%d.",
+        len(unique_forms),
+        start_page,
+        end_page,
+    )
     return unique_forms
 
 
@@ -162,13 +177,13 @@ def extract_form_pdf(
     page_start: int,
     page_end: int,
     output_path: str,
-    force_overwrite: bool = False
+    force_overwrite: bool = False,
 ) -> Dict[str, Any]:
     """
     Extracts a page-perfect vector PDF from source_pdf_path for page_start..page_end.
     Computes byte size and SHA-256 hash.
     Idempotent: if output file already exists and force_overwrite is False, reuses existing file bytes.
-    
+
     Returns:
         Dict with filename, byte_size, sha256.
     """
@@ -193,5 +208,5 @@ def extract_form_pdf(
     return {
         "filename": os.path.basename(output_path),
         "byte_size": byte_size,
-        "sha256": sha256_hash
+        "sha256": sha256_hash,
     }

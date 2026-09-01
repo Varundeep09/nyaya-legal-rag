@@ -11,9 +11,8 @@ import hashlib
 import pytest
 from app.forms.form_extractor import (
     slugify,
-    clean_enabling_section,
     detect_form_boundaries,
-    extract_form_pdf
+    extract_form_pdf,
 )
 from app.forms.manifest import generate_manifest
 
@@ -30,7 +29,9 @@ def test_no_hardcoded_titles():
     Asserts that form_extractor.py does NOT contain hardcoded dictionaries of form titles,
     proving dynamic text extraction and scraping per assignment requirements.
     """
-    assert os.path.exists(EXTRACTOR_PATH), f"Extractor file not found at {EXTRACTOR_PATH}"
+    assert os.path.exists(
+        EXTRACTOR_PATH
+    ), f"Extractor file not found at {EXTRACTOR_PATH}"
     with open(EXTRACTOR_PATH, "r", encoding="utf-8") as f:
         source_code = f.read()
 
@@ -38,7 +39,9 @@ def test_no_hardcoded_titles():
     # Check that no lookup table dictionary literal (more than 10 key-value pairs) exists in AST
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
-            assert len(node.keys) <= 10, f"Disallowed hardcoded dictionary table with {len(node.keys)} items found in form_extractor.py"
+            assert (
+                len(node.keys) <= 10
+            ), f"Disallowed hardcoded dictionary table with {len(node.keys)} items found in form_extractor.py"
 
     # Confirm known form title strings are not hardcoded in the source code
     assert "WARRANT OF ARREST" not in source_code
@@ -55,7 +58,9 @@ def test_all_58_forms_detected():
     assert len(forms) == 58, f"Expected 58 forms, detected {len(forms)}"
 
     form_numbers = [f["form_number"] for f in forms]
-    assert form_numbers == list(range(1, 59)), "Form numbers are not strictly sequential 1 through 58"
+    assert form_numbers == list(
+        range(1, 59)
+    ), "Form numbers are not strictly sequential 1 through 58"
 
 
 def test_form_33_multipage():
@@ -91,7 +96,9 @@ def test_manifest_matches_disk_files():
 
     for item in manifest:
         file_path = os.path.join(FORMS_DIR, item["filename"])
-        assert os.path.exists(file_path), f"Extracted form PDF missing on disk: {file_path}"
+        assert os.path.exists(
+            file_path
+        ), f"Extracted form PDF missing on disk: {file_path}"
 
         with open(file_path, "rb") as f:
             content = f.read()
@@ -99,8 +106,12 @@ def test_manifest_matches_disk_files():
         actual_size = len(content)
         actual_sha = hashlib.sha256(content).hexdigest()
 
-        assert actual_size == item["byte_size"], f"Size mismatch for {item['filename']}: {actual_size} != {item['byte_size']}"
-        assert actual_sha == item["sha256"], f"SHA256 mismatch for {item['filename']}: {actual_sha} != {item['sha256']}"
+        assert (
+            actual_size == item["byte_size"]
+        ), f"Size mismatch for {item['filename']}: {actual_size} != {item['byte_size']}"
+        assert (
+            actual_sha == item["sha256"]
+        ), f"SHA256 mismatch for {item['filename']}: {actual_sha} != {item['sha256']}"
 
 
 def test_idempotent_rerun(tmp_path):
@@ -139,5 +150,9 @@ def test_idempotent_rerun(tmp_path):
     man2 = generate_manifest(res2, manifest_file)
 
     for i in range(len(man1)):
-        assert man1[i]["sha256"] == man2[i]["sha256"], f"Non-idempotent SHA-256 hash for form {man1[i]['form_number']}"
-        assert man1[i]["byte_size"] == man2[i]["byte_size"], f"Non-idempotent byte size for form {man1[i]['form_number']}"
+        assert (
+            man1[i]["sha256"] == man2[i]["sha256"]
+        ), f"Non-idempotent SHA-256 hash for form {man1[i]['form_number']}"
+        assert (
+            man1[i]["byte_size"] == man2[i]["byte_size"]
+        ), f"Non-idempotent byte size for form {man1[i]['form_number']}"

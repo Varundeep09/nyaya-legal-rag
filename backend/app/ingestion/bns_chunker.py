@@ -19,8 +19,21 @@ DEFAULT_SOURCE_URI = "data/raw/bns_bare_act_2023.pdf"
 
 # Words that indicate a line is referring to a section rather than defining one
 NON_SECTION_PREFIXES = {
-    "section", "sections", "under", "of", "in", "by", "or", "and", "to", "see",
-    "sub-section", "sub-sections", "pursuant to", "refers to", "with"
+    "section",
+    "sections",
+    "under",
+    "of",
+    "in",
+    "by",
+    "or",
+    "and",
+    "to",
+    "see",
+    "sub-section",
+    "sub-sections",
+    "pursuant to",
+    "refers to",
+    "with",
 }
 
 
@@ -29,7 +42,7 @@ def _looks_like_real_chapter_title(text: str) -> bool:
     Checks if chapter title candidate is ALL-CAPS (ignoring punctuation/digits/whitespace).
     Empty text is considered valid (next-line lookahead will resolve title).
     """
-    letters_only = re.sub(r'[^A-Za-z]', '', text)
+    letters_only = re.sub(r"[^A-Za-z]", "", text)
     return letters_only.isupper() if letters_only else True
 
 
@@ -43,7 +56,7 @@ def clean_chapter_title_line(text: str) -> str:
     words = text.strip().split()
     upper_words = []
     for w in words:
-        clean_w = re.sub(r'[^A-Za-z]', '', w)
+        clean_w = re.sub(r"[^A-Za-z]", "", w)
         if clean_w and clean_w.isupper():
             upper_words.append(w)
         else:
@@ -90,19 +103,22 @@ def clean_page_text(text: str) -> str:
             continue
 
         # Strip Gazette running header/footer noise lines
-        if any(noise in line_str for noise in [
-            "THE GAZETTE OF INDIA EXTRAORDINARY",
-            "REGISTERED NO.",
-            "MINISTRY OF LAW AND JUSTICE",
-            "PUBLISHED BY AUTHORITY",
-            "Separate paging is given",
-            "EXTRAORDINARY",
-            "[Part II—",
-            "[Part II-",
-            "Sec. 1]",
-            "PART II—Section 1",
-            "PART II-Section 1"
-        ]):
+        if any(
+            noise in line_str
+            for noise in [
+                "THE GAZETTE OF INDIA EXTRAORDINARY",
+                "REGISTERED NO.",
+                "MINISTRY OF LAW AND JUSTICE",
+                "PUBLISHED BY AUTHORITY",
+                "Separate paging is given",
+                "EXTRAORDINARY",
+                "[Part II—",
+                "[Part II-",
+                "Sec. 1]",
+                "PART II—Section 1",
+                "PART II-Section 1",
+            ]
+        ):
             continue
 
         # Strip separator lines (__________)
@@ -119,7 +135,9 @@ def clean_page_text(text: str) -> str:
     return cleaned_text
 
 
-def extract_pages(pdf_path: str, start_page: int = 1, end_page: int = 157) -> List[Tuple[int, str]]:
+def extract_pages(
+    pdf_path: str, start_page: int = 1, end_page: int = 157
+) -> List[Tuple[int, str]]:
     """
     Extracts raw text per page from PDF between start_page and end_page (1-indexed, inclusive).
     Returns list of tuples: (page_number, raw_text).
@@ -145,7 +163,7 @@ def extract_cross_references(text: str) -> List[str]:
 
     pattern = re.compile(
         r"\b(?:sections?|sub-section)\s+\d+(?:\(\d+\))?(?:\([a-z]\))?(?:\s*(?:to|and|,)\s*\d+(?:\(\d+\))?)?",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     matches = []
@@ -172,7 +190,11 @@ def split_section_into_subsections(section_text: str) -> List[str]:
         line_s = line.strip()
         m = subsec_re.match(line_s)
         # If line starts a new numbered subsection (and it's not the very first line of atom 0)
-        if m and current_atom_lines and (not current_atom_lines[0].strip().startswith(line_s[:4])):
+        if (
+            m
+            and current_atom_lines
+            and (not current_atom_lines[0].strip().startswith(line_s[:4]))
+        ):
             atoms.append("\n".join(current_atom_lines).strip())
             current_atom_lines = [line]
         else:
@@ -195,8 +217,12 @@ def split_atom_into_clauses(atom_text: str) -> List[str]:
     clause_atoms = []
     current_clause_lines = []
 
-    top_clause_re = re.compile(r"^\(([a-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)
-    proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
+    top_clause_re = re.compile(
+        r"^\(([a-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE
+    )
+    proviso_or_expl = re.compile(
+        r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE
+    )
 
     for line in lines:
         line_s = line.strip()
@@ -225,7 +251,9 @@ def split_atom_tier2_generic_clauses(atom_text: str) -> List[str]:
     current_clause_lines = []
 
     generic_clause_re = re.compile(r"^\(([a-z]{1,2})\)\s+", re.IGNORECASE)
-    proviso_or_expl = re.compile(r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE)
+    proviso_or_expl = re.compile(
+        r"^(?:Provided|Explanation|Illustration|Exception)", re.IGNORECASE
+    )
 
     for line in lines:
         line_s = line.strip()
@@ -244,7 +272,9 @@ def split_atom_tier2_generic_clauses(atom_text: str) -> List[str]:
     return [c for c in clause_atoms if c]
 
 
-def pack_atom_clauses_greedily(clauses: List[str], max_size: int = MAX_CHUNK_SIZE) -> List[str]:
+def pack_atom_clauses_greedily(
+    clauses: List[str], max_size: int = MAX_CHUNK_SIZE
+) -> List[str]:
     """
     Greedily packs a list of clause atoms into chunks up to max_size.
     Absorbs short introductory preambles to prevent orphaning context.
@@ -280,7 +310,7 @@ def pack_atoms_greedily(
     atoms: List[str],
     max_size: int = MAX_CHUNK_SIZE,
     fallback_tracker: Optional[Set[str]] = None,
-    sec_num: Optional[str] = None
+    sec_num: Optional[str] = None,
 ) -> List[str]:
     """
     Greedily packs atoms into chunks without exceeding max_size.
@@ -343,7 +373,7 @@ def pack_atoms_greedily(
 def parse_chapters_and_sections(
     pages_text: List[Tuple[int, str]],
     source_uri: str = DEFAULT_SOURCE_URI,
-    stats: Optional[Dict[str, Any]] = None
+    stats: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Walks cleaned text of pages 1-157 and yields structured StatuteChunk dictionaries
@@ -361,7 +391,12 @@ def parse_chapters_and_sections(
     section_start_re = re.compile(r"^(.*?)\b(\d{1,3})\.\s*(.*)")
 
     CROSS_REF_TRIGGER_WORDS = {
-        "section", "sections", "sub-section", "sub-sections", "clause", "clauses"
+        "section",
+        "sections",
+        "sub-section",
+        "sub-sections",
+        "clause",
+        "clauses",
     }
 
     section_blocks: List[Dict[str, Any]] = []
@@ -386,7 +421,9 @@ def parse_chapters_and_sections(
             advanced_lines = 0
 
             # If same-line title is empty or not ALL-CAPS, lookahead to next line
-            if not candidate_title or not _looks_like_real_chapter_title(candidate_title):
+            if not candidate_title or not _looks_like_real_chapter_title(
+                candidate_title
+            ):
                 if idx + 1 < len(doc_lines):
                     next_page, next_line = doc_lines[idx + 1]
                     cleaned_next = clean_chapter_title_line(next_line.strip())
@@ -415,29 +452,43 @@ def parse_chapters_and_sections(
 
             sec_val = int(sec_num_str)
             if 1 <= sec_val <= 531:
-                prefix_words = set(re.findall(r'[a-zA-Z\-]+', prefix.lower()))
+                prefix_words = set(re.findall(r"[a-zA-Z\-]+", prefix.lower()))
 
-                is_cross_ref_word = bool(prefix_words.intersection(CROSS_REF_TRIGGER_WORDS))
+                is_cross_ref_word = bool(
+                    prefix_words.intersection(CROSS_REF_TRIGGER_WORDS)
+                )
                 is_backward_jump = sec_val <= running_max_sec
-                is_too_far_forward = (running_max_sec > 0 and sec_val > running_max_sec + 5)
+                is_too_far_forward = (
+                    running_max_sec > 0 and sec_val > running_max_sec + 5
+                )
 
                 accept = False
                 if not is_cross_ref_word and len(prefix) < 60:
                     if not prefix:  # clean line start
-                        accept = (sec_val > running_max_sec) and (sec_val <= running_max_sec + 10 or running_max_sec == 0)
+                        accept = (sec_val > running_max_sec) and (
+                            sec_val <= running_max_sec + 10 or running_max_sec == 0
+                        )
                     else:
                         accept = not is_backward_jump and not is_too_far_forward
 
                 if accept:
                     running_max_sec = sec_val
-                    sec_title = prefix if (prefix and not prefix.endswith(".")) else f"Section {sec_num_str}"
+                    sec_title = (
+                        prefix
+                        if (prefix and not prefix.endswith("."))
+                        else f"Section {sec_num_str}"
+                    )
                     if prefix.endswith("."):
                         sec_title = prefix[:-1]
 
                     if current_block:
                         section_blocks.append(current_block)
 
-                    line_content = f"{sec_num_str}. {body_start}" if body_start else f"{sec_num_str}."
+                    line_content = (
+                        f"{sec_num_str}. {body_start}"
+                        if body_start
+                        else f"{sec_num_str}."
+                    )
                     current_block = {
                         "act": ACT_NAME,
                         "act_short": ACT_SHORT,
@@ -448,7 +499,7 @@ def parse_chapters_and_sections(
                         "lines": [(page_num, line_content)],
                         "page_start": page_num,
                         "page_end": page_num,
-                        "needs_review": False
+                        "needs_review": False,
                     }
                     idx += 1
                     continue
@@ -472,7 +523,7 @@ def parse_chapters_and_sections(
         page_start = block["page_start"]
         page_end = block["page_end"]
 
-        full_block_text = "\n".join([l[1] for l in block_lines]).strip()
+        full_block_text = "\n".join([ln[1] for ln in block_lines]).strip()
         full_block_text = re.sub(r"\n{3,}", "\n\n", full_block_text)
 
         # If total section text <= MAX_CHUNK_SIZE (1200 chars), emit ONE chunk
@@ -484,26 +535,35 @@ def parse_chapters_and_sections(
             sub_match = re.search(r"^\d+\.\s*(\(\d+\))", full_block_text)
             subsection = sub_match.group(1) if sub_match else None
 
-            chunks.append({
-                "act": block["act"],
-                "act_short": block["act_short"],
-                "chapter": block["chapter"],
-                "chapter_title": block["chapter_title"],
-                "section_number": sec_num,
-                "section_title": block["section_title"],
-                "subsection": subsection,
-                "clause": None,
-                "text": full_block_text,
-                "has_illustration": "Illustration" in full_block_text,
-                "has_proviso": any(p in full_block_text for p in ["Provided that", "Provided further that", "Provided also that"]),
-                "has_exception": "Exception" in full_block_text,
-                "page_start": page_start,
-                "page_end": page_end,
-                "chunk_id": chunk_id,
-                "source_uri": source_uri,
-                "references_json": extract_cross_references(full_block_text),
-                "needs_review": False
-            })
+            chunks.append(
+                {
+                    "act": block["act"],
+                    "act_short": block["act_short"],
+                    "chapter": block["chapter"],
+                    "chapter_title": block["chapter_title"],
+                    "section_number": sec_num,
+                    "section_title": block["section_title"],
+                    "subsection": subsection,
+                    "clause": None,
+                    "text": full_block_text,
+                    "has_illustration": "Illustration" in full_block_text,
+                    "has_proviso": any(
+                        p in full_block_text
+                        for p in [
+                            "Provided that",
+                            "Provided further that",
+                            "Provided also that",
+                        ]
+                    ),
+                    "has_exception": "Exception" in full_block_text,
+                    "page_start": page_start,
+                    "page_end": page_end,
+                    "chunk_id": chunk_id,
+                    "source_uri": source_uri,
+                    "references_json": extract_cross_references(full_block_text),
+                    "needs_review": False,
+                }
+            )
         else:
             # Parse into subsection atoms and pack greedily
             subsecs = split_section_into_subsections(full_block_text)
@@ -511,7 +571,7 @@ def parse_chapters_and_sections(
                 subsecs,
                 max_size=MAX_CHUNK_SIZE,
                 fallback_tracker=fallback_sections,
-                sec_num=sec_num
+                sec_num=sec_num,
             )
 
             for p_text in packed_texts:
@@ -522,29 +582,40 @@ def parse_chapters_and_sections(
                 sub_match = re.search(r"^(\(\d+\)|\([a-z]\))", p_text.strip())
                 subsection = sub_match.group(1) if sub_match else None
 
-                chunks.append({
-                    "act": block["act"],
-                    "act_short": block["act_short"],
-                    "chapter": block["chapter"],
-                    "chapter_title": block["chapter_title"],
-                    "section_number": sec_num,
-                    "section_title": block["section_title"],
-                    "subsection": subsection,
-                    "clause": None,
-                    "text": p_text,
-                    "has_illustration": "Illustration" in p_text,
-                    "has_proviso": any(p in p_text for p in ["Provided that", "Provided further that", "Provided also that"]),
-                    "has_exception": "Exception" in p_text,
-                    "page_start": page_start,
-                    "page_end": page_end,
-                    "chunk_id": chunk_id,
-                    "source_uri": source_uri,
-                    "references_json": extract_cross_references(p_text),
-                    "needs_review": False
-                })
+                chunks.append(
+                    {
+                        "act": block["act"],
+                        "act_short": block["act_short"],
+                        "chapter": block["chapter"],
+                        "chapter_title": block["chapter_title"],
+                        "section_number": sec_num,
+                        "section_title": block["section_title"],
+                        "subsection": subsection,
+                        "clause": None,
+                        "text": p_text,
+                        "has_illustration": "Illustration" in p_text,
+                        "has_proviso": any(
+                            p in p_text
+                            for p in [
+                                "Provided that",
+                                "Provided further that",
+                                "Provided also that",
+                            ]
+                        ),
+                        "has_exception": "Exception" in p_text,
+                        "page_start": page_start,
+                        "page_end": page_end,
+                        "chunk_id": chunk_id,
+                        "source_uri": source_uri,
+                        "references_json": extract_cross_references(p_text),
+                        "needs_review": False,
+                    }
+                )
 
     if stats is not None:
-        sorted_fallback = sorted(list(fallback_sections), key=lambda x: int(x) if x.isdigit() else 9999)
+        sorted_fallback = sorted(
+            list(fallback_sections), key=lambda x: int(x) if x.isdigit() else 9999
+        )
         stats["fallback_sections"] = sorted_fallback
         stats["fallback_count"] = len(sorted_fallback)
 

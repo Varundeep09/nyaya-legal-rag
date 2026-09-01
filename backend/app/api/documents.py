@@ -7,9 +7,16 @@ and cascade deletion.
 import os
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header, status, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from fastapi import (
+    APIRouter,
+    Depends,
+    UploadFile,
+    File,
+    HTTPException,
+    status,
+    Request,
+)
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import fitz  # PyMuPDF
@@ -59,20 +66,24 @@ class DocumentListItem(BaseModel):
 @router.post(
     "/upload",
     response_model=DocumentUploadResponse,
-    status_code=status.HTTP_202_ACCEPTED
+    status_code=status.HTTP_202_ACCEPTED,
 )
 @limiter.limit("20/minute")
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
     session_id: str = Depends(get_session_id_from_header),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Uploads a user PDF document for session-isolated background ingestion.
     Validates MIME magic bytes, size limits, and encryption.
     """
-    logger.info("Received document upload request for session '%s', filename: '%s'", session_id, file.filename)
+    logger.info(
+        "Received document upload request for session '%s', filename: '%s'",
+        session_id,
+        file.filename,
+    )
 
     # 1. Read file content
     content = await file.read()
@@ -84,14 +95,14 @@ async def upload_document(
     if file_size > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"File exceeds maximum allowed size of 20MB (received {file_size / (1024*1024):.2f}MB)."
+            detail=f"File exceeds maximum allowed size of 20MB (received {file_size / (1024*1024):.2f}MB).",
         )
 
     # 3. MIME magic bytes sniffing
     if not content.startswith(b"%PDF-"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid file format. Uploaded file is not a valid PDF document (missing %PDF- header)."
+            detail="Invalid file format. Uploaded file is not a valid PDF document (missing %PDF- header).",
         )
 
     # 4. Integrity and encryption validation via PyMuPDF
@@ -101,7 +112,7 @@ async def upload_document(
             doc_fitz.close()
             raise HTTPException(
                 status_code=400,
-                detail="Encrypted or password-protected PDFs are not supported. Please upload an unprotected PDF."
+                detail="Encrypted or password-protected PDFs are not supported. Please upload an unprotected PDF.",
             )
         if len(doc_fitz) == 0:
             doc_fitz.close()
@@ -112,8 +123,7 @@ async def upload_document(
     except Exception as e:
         logger.error("PDF integrity check failed: %s", e)
         raise HTTPException(
-            status_code=400,
-            detail=f"Corrupted or malformed PDF file: {str(e)}"
+            status_code=400, detail=f"Corrupted or malformed PDF file: {str(e)}"
         )
 
     # 5. Persist file to session storage
@@ -134,7 +144,7 @@ async def upload_document(
         id=doc_uuid,
         session_id=session_id,
         filename=file.filename or "uploaded_document.pdf",
-        status="uploaded"
+        status="uploaded",
     )
     db.add(user_doc)
     await db.commit()
@@ -150,7 +160,7 @@ async def upload_document(
             str(doc_uuid),
             session_id,
             file_path,
-            _job_id=job_id
+            _job_id=job_id,
         )
         if job:
             job_id = job.job_id
@@ -158,20 +168,25 @@ async def upload_document(
     except Exception as e:
         logger.warning(
             "Failed to enqueue arq job via Redis (%s). Processing document synchronously as fallback...",
-            e
+            e,
         )
         # Fallback to direct background execution for local standalone environments
         import asyncio
-        asyncio.create_task(process_user_document({}, str(doc_uuid), session_id, file_path))
 
-    logger.info("Enqueued document processing job '%s' for document '%s'", job_id, doc_uuid)
+        asyncio.create_task(
+            process_user_document({}, str(doc_uuid), session_id, file_path)
+        )
+
+    logger.info(
+        "Enqueued document processing job '%s' for document '%s'", job_id, doc_uuid
+    )
     DOCUMENT_UPLOADS.labels(status="success").inc()
     return DocumentUploadResponse(
         document_id=str(doc_uuid),
         job_id=job_id,
         filename=user_doc.filename,
         status="uploaded",
-        session_id=session_id
+        session_id=session_id,
     )
 
 
@@ -179,7 +194,7 @@ async def upload_document(
 async def get_document_status(
     document_id: str,
     session_id: str = Depends(get_session_id_from_header),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Checks the async processing status of a document.
@@ -190,10 +205,7 @@ async def get_document_status(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document UUID format.")
 
-    stmt = (
-        select(UserDocument)
-        .where(UserDocument.id == doc_uuid)
-    )
+    stmt = select(UserDocument).where(UserDocument.id == doc_uuid)
     res = await db.execute(stmt)
     user_doc = res.scalar_one_or_none()
 
@@ -201,14 +213,15 @@ async def get_document_status(
     if not user_doc or user_doc.session_id != session_id:
         logger.warning(
             "Access denied to document '%s' (session '%s' requested, doc belongs to '%s')",
-            document_id, session_id, user_doc.session_id if user_doc else "None"
+            document_id,
+            session_id,
+            user_doc.session_id if user_doc else "None",
         )
         raise HTTPException(status_code=404, detail="Document not found.")
 
     # Count ready chunks
-    stmt_chunks = (
-        select(func.count(UserDocumentChunk.id))
-        .where(UserDocumentChunk.document_id == doc_uuid)
+    stmt_chunks = select(func.count(UserDocumentChunk.id)).where(
+        UserDocumentChunk.document_id == doc_uuid
     )
     res_chunks = await db.execute(stmt_chunks)
     chunks_ready = res_chunks.scalar() or 0
@@ -220,14 +233,14 @@ async def get_document_status(
         page_count=user_doc.page_count,
         chunks_ready=chunks_ready,
         has_prompt_injection=user_doc.has_prompt_injection,
-        error_message=user_doc.error_message
+        error_message=user_doc.error_message,
     )
 
 
 @router.get("", response_model=List[DocumentListItem])
 async def list_user_documents(
     session_id: str = Depends(get_session_id_from_header),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Lists all uploaded documents for the current session only.
@@ -246,7 +259,7 @@ async def list_user_documents(
             filename=d.filename,
             status=d.status,
             page_count=d.page_count,
-            created_at=d.created_at.isoformat() if d.created_at else ""
+            created_at=d.created_at.isoformat() if d.created_at else "",
         )
         for d in docs
     ]
@@ -256,7 +269,7 @@ async def list_user_documents(
 async def delete_user_document(
     document_id: str,
     session_id: str = Depends(get_session_id_from_header),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Deletes a user document and its embedded chunks.
@@ -288,5 +301,9 @@ async def delete_user_document(
         except Exception as e:
             logger.warning("Failed to remove local upload file '%s': %s", file_path, e)
 
-    logger.info("Successfully deleted document '%s' and cascaded chunks for session '%s'", document_id, session_id)
+    logger.info(
+        "Successfully deleted document '%s' and cascaded chunks for session '%s'",
+        document_id,
+        session_id,
+    )
     return {"message": "Document deleted successfully", "document_id": document_id}

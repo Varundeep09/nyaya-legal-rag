@@ -13,15 +13,15 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 # Add backend directory to sys.path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
-
-from app.core.logging import logger
-from app.core.db import AsyncSessionLocal
-from app.forms.form_extractor import (
-    slugify,
-    detect_form_boundaries,
-    extract_form_pdf
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"
+    ),
 )
+
+from app.core.db import AsyncSessionLocal
+from app.forms.form_extractor import slugify, detect_form_boundaries, extract_form_pdf
 from app.forms.manifest import generate_manifest, sync_forms_to_db
 
 DEFAULT_PDF_PATH = os.path.join("data", "raw", "bns_bare_act_2023.pdf")
@@ -34,7 +34,7 @@ async def run_forms_pipeline(
     output_dir: str = DEFAULT_FORMS_DIR,
     manifest_path: str = DEFAULT_MANIFEST_PATH,
     start_page: int = 190,
-    end_page: int = 249
+    end_page: int = 249,
 ):
     print("=" * 80)
     print("       NYAYA LEGAL ASSISTANT — STATUTORY FORMS EXTRACTION PIPELINE       ")
@@ -53,7 +53,9 @@ async def run_forms_pipeline(
 
     # Step 1: Detect Form Boundaries & Scrape Titles Dynamically
     print("\n[1/4] Detecting form boundaries and scraping dynamic titles...")
-    forms_meta = detect_form_boundaries(pdf_path, start_page=start_page, end_page=end_page)
+    forms_meta = detect_form_boundaries(
+        pdf_path, start_page=start_page, end_page=end_page
+    )
     print(f"  -> Detected {len(forms_meta)} distinct statutory forms.")
 
     # Step 2: Extract Page-Perfect Vector PDFs to disk
@@ -71,15 +73,21 @@ async def run_forms_pipeline(
             source_pdf_path=pdf_path,
             page_start=f["page_start"],
             page_end=f["page_end"],
-            output_path=out_pdf_path
+            output_path=out_pdf_path,
         )
 
         merged = dict(f)
         merged.update(pdf_info)
         full_forms_data.append(merged)
 
-        page_span = f"p.{f['page_start']}" if f["page_start"] == f["page_end"] else f"p.{f['page_start']}-{f['page_end']}"
-        sec_info = f"Sec: {f['enabling_section']}" if f.get("enabling_section") else "No Sec"
+        page_span = (
+            f"p.{f['page_start']}"
+            if f["page_start"] == f["page_end"]
+            else f"p.{f['page_start']}-{f['page_end']}"
+        )
+        sec_info = (
+            f"Sec: {f['enabling_section']}" if f.get("enabling_section") else "No Sec"
+        )
         print(f"  [Form {form_num:2d}] {page_span:11s} | {sec_info:35s} | {filename}")
 
     # Step 3: Write forms_manifest.json
@@ -105,9 +113,13 @@ async def run_forms_pipeline(
     print(f"Total Forms Extracted:     {len(full_forms_data)} / 58")
     print(f"Multi-page Forms Count:    {len(multi_page_forms)}")
     for mp in multi_page_forms:
-        print(f"  - Form {mp['form_number']}: '{mp['title']}' (pages {mp['page_start']}-{mp['page_end']})")
+        print(
+            f"  - Form {mp['form_number']}: '{mp['title']}' (pages {mp['page_start']}-{mp['page_end']})"
+        )
     print(f"Needs Review Count:        {len(needs_review)}")
-    print(f"OCR-Flagged Pages Count:   0 (all pages 190-249 contained clean vector text)")
+    print(
+        "OCR-Flagged Pages Count:   0 (all pages 190-249 contained clean vector text)"
+    )
     print(f"Total Pipeline Duration:   {elapsed:.2f}s")
     print("=" * 80)
 

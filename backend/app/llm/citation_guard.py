@@ -10,13 +10,11 @@ from typing import List, Dict, Any, Tuple, Optional
 from app.core.logging import logger
 
 STATUTE_CITATION_PATTERN = re.compile(
-    r"\[(BNSS|BNS)\s+s\.([0-9a-zA-Z\(\)]+)\]",
-    re.IGNORECASE
+    r"\[(BNSS|BNS)\s+s\.([0-9a-zA-Z\(\)]+)\]", re.IGNORECASE
 )
 
 USER_DOC_CITATION_PATTERN = re.compile(
-    r"\[Doc:\s*([^,\]]+?)(?:,\s*p\.(\d+))?\]",
-    re.IGNORECASE
+    r"\[Doc:\s*([^,\]]+?)(?:,\s*p\.(\d+))?\]", re.IGNORECASE
 )
 
 
@@ -38,16 +36,16 @@ def extract_doc_citations(generated_text: str) -> List[Tuple[str, Optional[int]]
 
 def validate_doc_citations(
     doc_citations: List[Tuple[str, Optional[int]]],
-    retrieved_user_chunks: List[Dict[str, Any]]
+    retrieved_user_chunks: List[Dict[str, Any]],
 ) -> Tuple[List[Tuple[str, Optional[int]]], List[Tuple[str, Optional[int]]]]:
     """
     Validates that each cited (filename, page_number) pair actually matches a
     filename and page_number that was present in the retrieved user document chunks
     sent to the LLM for this request.
-    
+
     A citation referencing a filename never uploaded/retrieved, or a page number
     that the retrieved chunks never came from, is marked invalid.
-    
+
     Returns:
         Tuple of (valid_doc_citations, invalid_doc_citations)
     """
@@ -75,7 +73,11 @@ def validate_doc_citations(
         fn_clean = fn.strip().lower()
         if fn_clean not in valid_retrieved_map:
             invalid.append((fn, page))
-        elif page is not None and valid_retrieved_map[fn_clean] and page not in valid_retrieved_map[fn_clean]:
+        elif (
+            page is not None
+            and valid_retrieved_map[fn_clean]
+            and page not in valid_retrieved_map[fn_clean]
+        ):
             # Cited a page number not in retrieved chunks for this file
             invalid.append((fn, page))
         else:
@@ -131,13 +133,12 @@ def extract_full_citation_matches(generated_text: str) -> List[Tuple[str, str, s
 
 
 def validate_citations(
-    citations: List[str],
-    retrieved_chunks: List[Dict[str, Any]]
+    citations: List[str], retrieved_chunks: List[Dict[str, Any]]
 ) -> Tuple[List[str], List[str]]:
     """
     Checks each extracted citation identifier against sections and documents
     present in the specific retrieved context chunks sent to the LLM.
-    
+
     Returns:
         Tuple of (valid_citations, hallucinated_citations)
     """
@@ -174,8 +175,7 @@ def validate_citations(
             parsed_doc_tuples.append((d, (fn, page)))
 
     valid_doc_tuples, invalid_doc_tuples = validate_doc_citations(
-        [t[1] for t in parsed_doc_tuples],
-        user_doc_chunks
+        [t[1] for t in parsed_doc_tuples], user_doc_chunks
     )
     valid_doc_set = set(valid_doc_tuples)
 
@@ -205,14 +205,12 @@ def validate_citations(
 
 
 def sanitize_response(
-    generated_text: str,
-    retrieved_chunks: List[Dict[str, Any]],
-    query: str = ""
+    generated_text: str, retrieved_chunks: List[Dict[str, Any]], query: str = ""
 ) -> Tuple[str, List[str], List[str]]:
     """
     Validates all citations in generated text against retrieved chunks.
     Strips hallucinated citations from the output text and logs warnings.
-    
+
     Returns:
         Tuple of (sanitized_text, valid_citations, hallucinated_citations)
     """
@@ -230,7 +228,10 @@ def sanitize_response(
         if ident in hallucinated_ids:
             logger.warning(
                 "CITATION GUARD TRIGGERED: Stripping hallucinated %s citation '%s' (ident '%s') for query '%s'.",
-                cit_type, full_token, ident, query
+                cit_type,
+                full_token,
+                ident,
+                query,
             )
             sanitized_text = sanitized_text.replace(full_token, "")
 

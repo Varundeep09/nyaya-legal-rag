@@ -59,13 +59,17 @@ async def run_ingestion(with_embeddings: bool = False):
 
         # Illustrations count
         result_illus = await session.execute(
-            select(func.count(StatuteChunk.id)).where(StatuteChunk.has_illustration == True)
+            select(func.count(StatuteChunk.id)).where(
+                StatuteChunk.has_illustration == True
+            )
         )
         illus_count = result_illus.scalar()
 
         # Non-empty references count
         result_refs = await session.execute(
-            select(func.count(StatuteChunk.id)).where(func.jsonb_array_length(StatuteChunk.references_json) > 0)
+            select(func.count(StatuteChunk.id)).where(
+                func.jsonb_array_length(StatuteChunk.references_json) > 0
+            )
         )
         refs_count = result_refs.scalar()
 
@@ -76,7 +80,9 @@ async def run_ingestion(with_embeddings: bool = False):
         needs_review_count = result_review.scalar()
 
         # Chunk lengths analysis
-        all_lengths_stmt = select(StatuteChunk.chunk_id, func.length(StatuteChunk.text)).order_by(func.length(StatuteChunk.text))
+        all_lengths_stmt = select(
+            StatuteChunk.chunk_id, func.length(StatuteChunk.text)
+        ).order_by(func.length(StatuteChunk.text))
         all_lengths = (await session.execute(all_lengths_stmt)).all()
 
         lengths_only = [l[1] for l in all_lengths]
@@ -88,7 +94,12 @@ async def run_ingestion(with_embeddings: bool = False):
         oversized_chunks = [(l[0], l[1]) for l in all_lengths if l[1] > 2000]
 
         # Fetch sample chunks for display
-        sample_stmt = select(StatuteChunk.chunk_id, StatuteChunk.chapter, StatuteChunk.section_number, StatuteChunk.section_title).limit(5)
+        sample_stmt = select(
+            StatuteChunk.chunk_id,
+            StatuteChunk.chapter,
+            StatuteChunk.section_number,
+            StatuteChunk.section_title,
+        ).limit(5)
         samples = (await session.execute(sample_stmt)).all()
 
     fallback_count = ingestion_stats.get("fallback_count", 0)
@@ -104,7 +115,7 @@ async def run_ingestion(with_embeddings: bool = False):
     print(f" Chunks marked needs_review (pre-embedding):    {needs_review_count}")
     print(f" Total Sections Triggering Clause Fallback:     {fallback_count}")
     print("------------------------------------------------------------------")
-    print(f" Chunk Length Statistics (Characters):")
+    print(" Chunk Length Statistics (Characters):")
     print(f"   - Max Chunk Length:                          {max_chunk_len} chars")
     print(f"   - p95 Chunk Length:                          {p95_chunk_len} chars")
     print(f"   - Chunks > 2000 chars (Risk Zone):           {len(oversized_chunks)}")
@@ -118,7 +129,9 @@ async def run_ingestion(with_embeddings: bool = False):
     print("==================================================================")
     print(" Sample Chunks:")
     for s in samples:
-        print(f"   - {s.chunk_id} | Ch. {s.chapter} | Sec. {s.section_number}: {s.section_title}")
+        print(
+            f"   - {s.chunk_id} | Ch. {s.chapter} | Sec. {s.section_number}: {s.section_title}"
+        )
     print("==================================================================")
 
     # 4. Dense Vector Embeddings Population (if requested)
@@ -130,39 +143,55 @@ async def run_ingestion(with_embeddings: bool = False):
         # Re-check needs_review after token truncation checks
         async with AsyncSessionLocal() as session:
             final_review_res = await session.execute(
-                select(func.count(StatuteChunk.id)).where(StatuteChunk.needs_review == True)
+                select(func.count(StatuteChunk.id)).where(
+                    StatuteChunk.needs_review == True
+                )
             )
             final_needs_review = final_review_res.scalar()
 
             embedded_res = await session.execute(
-                select(func.count(StatuteChunk.id)).where(StatuteChunk.embedding.isnot(None))
+                select(func.count(StatuteChunk.id)).where(
+                    StatuteChunk.embedding.isnot(None)
+                )
             )
             total_embedded_db = embedded_res.scalar()
 
         print("\n==================================================================")
         print("                      EMBEDDINGS SUMMARY                          ")
         print("==================================================================")
-        print(f" Total Chunks with Embeddings in DB:            {total_embedded_db} / {total_count}")
-        print(f" Embedding Wall-Clock Time:                     {emb_stats['wall_clock_seconds']} seconds")
-        print(f" Throughput:                                    {emb_stats['throughput_chunks_per_sec']} chunks/sec")
-        print(f" Truncation Warnings (> 512 tokens):            {emb_stats['truncation_warnings']}")
-        if emb_stats['truncated_chunk_ids']:
-            print(f" Truncated Chunk IDs (needs_review=True):")
-            for t_cid in emb_stats['truncated_chunk_ids']:
+        print(
+            f" Total Chunks with Embeddings in DB:            {total_embedded_db} / {total_count}"
+        )
+        print(
+            f" Embedding Wall-Clock Time:                     {emb_stats['wall_clock_seconds']} seconds"
+        )
+        print(
+            f" Throughput:                                    {emb_stats['throughput_chunks_per_sec']} chunks/sec"
+        )
+        print(
+            f" Truncation Warnings (> 512 tokens):            {emb_stats['truncation_warnings']}"
+        )
+        if emb_stats["truncated_chunk_ids"]:
+            print(" Truncated Chunk IDs (needs_review=True):")
+            for t_cid in emb_stats["truncated_chunk_ids"]:
                 print(f"   - {t_cid}")
         print(f" Total Chunks with needs_review = True:         {final_needs_review}")
         print("==================================================================\n")
     else:
-        print("\n[*] Embeddings skipped. To compute and populate vector embeddings, re-run with:")
+        print(
+            "\n[*] Embeddings skipped. To compute and populate vector embeddings, re-run with:"
+        )
         print("    python scripts/ingest_bns.py --with-embeddings\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingest BNSS statute text and populate embeddings.")
+    parser = argparse.ArgumentParser(
+        description="Ingest BNSS statute text and populate embeddings."
+    )
     parser.add_argument(
         "--with-embeddings",
         action="store_true",
-        help="Generate and populate BAAI/bge-base-en-v1.5 dense embeddings for all statute chunks."
+        help="Generate and populate BAAI/bge-base-en-v1.5 dense embeddings for all statute chunks.",
     )
     args = parser.parse_args()
     asyncio.run(run_ingestion(with_embeddings=args.with_embeddings))

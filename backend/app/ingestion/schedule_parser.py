@@ -4,9 +4,9 @@ Extracts BNS offence classification entries across pages 158-189 into structured
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
 from app.core.logging import logger
-from app.ingestion.bns_chunker import extract_pages, clean_page_text
+from app.ingestion.bns_chunker import clean_page_text
 
 DEFAULT_PDF_PATH = "data/raw/bns_bare_act_2023.pdf"
 DEFAULT_SOURCE_URI = "data/raw/bns_bare_act_2023.pdf"
@@ -25,7 +25,7 @@ TAIL_RE = re.compile(
     r"\s+((?:Cognizable|Non-cognizable|According\s+as\s+[^\.]*?cognizable[^\.]*?)\.?)\s+"
     r"((?:Bailable|Non-bailable|According\s+as\s+[^\.]*?bailable[^\.]*?)\.?)\s+"
     r"((?:Court\s+of\s+Session|Magistrate\s+of\s+the\s+first\s+class|Any\s+Magistrate|Court\s+by\s+which[^\.]*?triable|High\s+Court|The\s+court[^\.]*?triable)[^\.]*?\.?)\s*$",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 
@@ -43,7 +43,7 @@ def finalize_schedule_row(row_dict: Dict[str, Any], source_uri: str) -> Dict[str
         bail = m.group(2).strip().rstrip(".")
         court = m.group(3).strip().rstrip(".")
         needs_review = False
-        line1_desc = line1[:m.start()].strip()
+        line1_desc = line1[: m.start()].strip()
         remaining_lines = row_dict["lines"][1:]
         all_desc_lines = ([line1_desc] if line1_desc else []) + remaining_lines
         offence_desc = "\n".join(all_desc_lines).strip()
@@ -64,21 +64,20 @@ def finalize_schedule_row(row_dict: Dict[str, Any], source_uri: str) -> Dict[str
         "triable_court": court,
         "needs_review": needs_review,
         "page_number": row_dict["page_number"],
-        "source_uri": source_uri
+        "source_uri": source_uri,
     }
 
 
 def parse_first_schedule(
-    pages_data: List[Tuple[int, str]],
-    source_uri: str = DEFAULT_SOURCE_URI
+    pages_data: List[Tuple[int, str]], source_uri: str = DEFAULT_SOURCE_URI
 ) -> List[Dict[str, Any]]:
     """
     Parses the First Schedule across pages 158-189.
-    
+
     1. Strips running headers and skips page 158 explanatory notes before table columns.
     2. Identifies row boundaries via BNS section number start pattern.
     3. Extracts tail classification fields where cleanly anchored on line 1.
-    
+
     Returns:
         List of dicts matching the OffenceClassification model schema.
     """
@@ -107,13 +106,13 @@ def parse_first_schedule(
                     records.append(finalize_schedule_row(current_row, source_uri))
 
                 sec_raw = match.group(1)
-                sec_norm = re.sub(r'\s+', '', sec_raw)
+                sec_norm = re.sub(r"\s+", "", sec_raw)
                 line_rest = match.group(2).strip()
                 current_row = {
                     "bns_section": sec_norm,
                     "first_line_rest": line_rest,
                     "lines": [line_s],
-                    "page_number": page_num
+                    "page_number": page_num,
                 }
             else:
                 if current_row:
@@ -126,6 +125,6 @@ def parse_first_schedule(
         "Parsed %d First Schedule rows across %d pages (%d needs_review=True)",
         len(records),
         len(pages_data),
-        sum(1 for r in records if r["needs_review"])
+        sum(1 for r in records if r["needs_review"]),
     )
     return records

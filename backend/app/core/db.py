@@ -26,7 +26,7 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False
+    autoflush=False,
 )
 
 
@@ -43,7 +43,7 @@ async def init_db() -> None:
     """
     Initializes PostgreSQL database by ensuring the pgvector extension exists
     and creating declarative tables.
-    
+
     NOTE ON MIGRATIONS:
     Using `run_sync(Base.metadata.create_all)` is a deliberate time-saving choice
     for the assignment timeline. In a production system post-assignment, a formal
@@ -57,4 +57,6 @@ async def init_db() -> None:
 
         # 2. Create declarative tables (temporary run_sync approach for assignment)
         await conn.run_sync(Base.metadata.create_all)
-        logger.info("All database tables created successfully via Base.metadata.create_all.")
+        logger.info(
+            "All database tables created successfully via Base.metadata.create_all."
+        )

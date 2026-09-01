@@ -22,7 +22,9 @@ def test_calculate_gemini_cost():
 
 def test_record_llm_usage():
     """Verify record_llm_usage increments Prometheus counters without errors."""
-    cost = record_llm_usage(model="gemini-3.6-flash", prompt_tokens=500, candidate_tokens=250)
+    cost = record_llm_usage(
+        model="gemini-3.6-flash", prompt_tokens=500, candidate_tokens=250
+    )
     assert cost > 0.0
 
 

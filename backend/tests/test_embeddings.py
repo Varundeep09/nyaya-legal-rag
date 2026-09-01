@@ -3,14 +3,13 @@ Tests for dense embedding generation with BAAI/bge-base-en-v1.5.
 Verifies model dimensions, determinism, asymmetric prefix divergence, and L2 normalization.
 """
 
-import pytest
 import math
 from app.retrieval.embeddings import (
     get_embedding_model,
     embed_passages,
     embed_query,
     check_token_length,
-    EXPECTED_DIMENSION
+    EXPECTED_DIMENSION,
 )
 
 
@@ -43,11 +42,15 @@ def test_asymmetric_prefix_divergence():
 
     assert len(query_vec) == EXPECTED_DIMENSION
     assert len(passage_vec) == EXPECTED_DIMENSION
-    assert query_vec != passage_vec, "Query and passage vectors must diverge due to asymmetric prefixes"
+    assert (
+        query_vec != passage_vec
+    ), "Query and passage vectors must diverge due to asymmetric prefixes"
 
     # Verify cosine similarity is high but strictly < 1.0
     dot_product = sum(q * p for q, p in zip(query_vec, passage_vec))
-    assert 0.70 < dot_product < 0.999, f"Expected high semantic similarity with prefix divergence, got {dot_product}"
+    assert (
+        0.70 < dot_product < 0.999
+    ), f"Expected high semantic similarity with prefix divergence, got {dot_product}"
 
 
 def test_l2_normalization():
@@ -59,8 +62,12 @@ def test_l2_normalization():
     passage_norm = math.sqrt(sum(x * x for x in passage_vec))
     query_norm = math.sqrt(sum(x * x for x in query_vec))
 
-    assert math.isclose(passage_norm, 1.0, rel_tol=1e-4), f"Passage vector norm should be 1.0, got {passage_norm}"
-    assert math.isclose(query_norm, 1.0, rel_tol=1e-4), f"Query vector norm should be 1.0, got {query_norm}"
+    assert math.isclose(
+        passage_norm, 1.0, rel_tol=1e-4
+    ), f"Passage vector norm should be 1.0, got {passage_norm}"
+    assert math.isclose(
+        query_norm, 1.0, rel_tol=1e-4
+    ), f"Query vector norm should be 1.0, got {query_norm}"
 
 
 def test_token_length_check():

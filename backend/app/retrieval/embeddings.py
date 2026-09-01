@@ -33,7 +33,9 @@ def get_embedding_model() -> SentenceTransformer:
             raise ValueError(
                 f"Embedding dimension mismatch! Model returned {real_dim}, but database Vector({EXPECTED_DIMENSION}) expected."
             )
-        logger.info(f"Model {MODEL_NAME} loaded: max_seq_length={real_max_seq}, dim={real_dim}")
+        logger.info(
+            f"Model {MODEL_NAME} loaded: max_seq_length={real_max_seq}, dim={real_dim}"
+        )
     return _model
 
 
@@ -66,7 +68,7 @@ def embed_passages(texts: List[str], batch_size: int = 32) -> List[List[float]]:
         prefixed_texts,
         batch_size=batch_size,
         normalize_embeddings=True,
-        show_progress_bar=False
+        show_progress_bar=False,
     )
 
     # Convert numpy ndarray to list of python floats
@@ -82,9 +84,7 @@ def embed_query(text: str) -> List[float]:
     prefixed_query = f"query: {text}"
 
     embedding = model.encode(
-        prefixed_query,
-        normalize_embeddings=True,
-        show_progress_bar=False
+        prefixed_query, normalize_embeddings=True, show_progress_bar=False
     )
 
     return embedding.tolist()

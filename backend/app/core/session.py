@@ -5,7 +5,7 @@ Ensures session isolation across user uploads and chat histories.
 
 import uuid
 from typing import Optional
-from fastapi import Request, Header
+from fastapi import Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,8 @@ async def ensure_session_exists(session_id: str, db: AsyncSession) -> ChatSessio
         db.add(session_obj)
         await db.commit()
         await db.refresh(session_obj)
-        logger.info("Created new ChatSession record in DB for session_id '%s'.", session_id)
+        logger.info(
+            "Created new ChatSession record in DB for session_id '%s'.", session_id
+        )
 
     return session_obj

@@ -6,9 +6,8 @@ statute section citations ([BNSS s.X], [BNS s.X]) and user document citations ([
 from app.llm.citation_guard import (
     extract_citations,
     extract_doc_citations,
-    validate_doc_citations,
     validate_citations,
-    sanitize_response
+    sanitize_response,
 )
 
 
@@ -37,14 +36,14 @@ def test_citation_validation_valid_and_hallucinated():
             "chunk_id": "bnss-s35-001",
             "act_short": "BNSS",
             "section_number": "35",
-            "section_title": "Section 35"
+            "section_title": "Section 35",
         },
         {
             "chunk_id": "bns-sched1-s65(1)",
             "act_short": "BNS",
             "section_number": "65(1)",
-            "section_title": "BNS Section 65(1)"
-        }
+            "section_title": "BNS Section 65(1)",
+        },
     ]
 
     generated_text = (
@@ -71,7 +70,7 @@ def test_sanitize_response_strips_hallucinated_citations():
             "chunk_id": "bnss-s103-001",
             "act_short": "BNSS",
             "section_number": "103",
-            "section_title": "Section 103"
+            "section_title": "Section 103",
         }
     ]
 
@@ -81,9 +80,7 @@ def test_sanitize_response_strips_hallucinated_citations():
     )
 
     sanitized, valid, hallucinated = sanitize_response(
-        text,
-        retrieved_chunks,
-        query="search procedures"
+        text, retrieved_chunks, query="search procedures"
     )
 
     assert "[BNSS s.103]" in sanitized
@@ -119,14 +116,14 @@ def test_doc_citation_validation():
             "retrieval_method": "user_document",
             "filename": "tenant_notice.pdf",
             "page_number": 1,
-            "text": "Notice of eviction."
+            "text": "Notice of eviction.",
         },
         {
             "chunk_id": "bnss-s35-001",
             "act_short": "BNSS",
             "section_number": "35",
-            "section_title": "Section 35"
-        }
+            "section_title": "Section 35",
+        },
     ]
 
     generated_text = (
@@ -137,9 +134,7 @@ def test_doc_citation_validation():
     )
 
     sanitized, valid, hallucinated = sanitize_response(
-        generated_text,
-        retrieved_chunks,
-        query="arrears and eviction"
+        generated_text, retrieved_chunks, query="arrears and eviction"
     )
 
     # Valid citations preserved

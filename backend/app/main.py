@@ -12,13 +12,18 @@ import redis.asyncio as aioredis
 from app.core.config import settings
 from app.core.db import init_db, engine, AsyncSessionLocal
 from app.core.logging import logger
-from app.core.limiter import limiter, RateLimitExceeded, _rate_limit_exceeded_handler, HAS_SLOWAPI
+from app.core.limiter import (
+    limiter,
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
+    HAS_SLOWAPI,
+)
 from app.core.metrics import (
     REQUEST_COUNT,
     REQUEST_DURATION,
     DB_HEALTH_GAUGE,
     REDIS_HEALTH_GAUGE,
-    metrics_endpoint
+    metrics_endpoint,
 )
 from app.api.search import router as search_router
 from app.api.chat import router as chat_router
@@ -51,6 +56,7 @@ if HAS_SLOWAPI and _rate_limit_exceeded_handler:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
 # Prometheus HTTP Traffic Instrumentation Middleware
 @app.middleware("http")
 async def prometheus_metrics_middleware(request: Request, call_next):
@@ -60,14 +66,19 @@ async def prometheus_metrics_middleware(request: Request, call_next):
 
     path = request.url.path
     # Group parameterized paths to keep metric cardinalities bounded
-    if path.startswith("/api/v1/forms/") and path not in ["/api/v1/forms/search", "/api/v1/forms/download-all"]:
+    if path.startswith("/api/v1/forms/") and path not in [
+        "/api/v1/forms/search",
+        "/api/v1/forms/download-all",
+    ]:
         path = "/api/v1/forms/{id}"
     elif path.startswith("/api/v1/documents/") and path != "/api/v1/documents/upload":
         path = "/api/v1/documents/{id}"
     elif path.startswith("/api/v1/conversations/"):
         path = "/api/v1/conversations/{session_id}"
 
-    REQUEST_COUNT.labels(method=request.method, endpoint=path, status_code=response.status_code).inc()
+    REQUEST_COUNT.labels(
+        method=request.method, endpoint=path, status_code=response.status_code
+    ).inc()
     REQUEST_DURATION.labels(endpoint=path).observe(duration)
     return response
 
@@ -95,7 +106,7 @@ app.add_api_route(
     metrics_endpoint,
     methods=["GET"],
     tags=["Metrics"],
-    include_in_schema=True
+    include_in_schema=True,
 )
 
 
@@ -122,7 +133,9 @@ async def readiness_check():
 
     # 2. Check Redis Server Connectivity
     try:
-        r = aioredis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, socket_timeout=2)
+        r = aioredis.Redis(
+            host=settings.REDIS_HOST, port=settings.REDIS_PORT, socket_timeout=2
+        )
         pong = await r.ping()
         if pong:
             redis_ok = True
@@ -135,7 +148,9 @@ async def readiness_check():
     REDIS_HEALTH_GAUGE.set(1.0 if redis_ok else 0.0)
 
     is_ready = db_ok and redis_ok
-    status_code = status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    status_code = (
+        status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
 
     payload = {
         "database": "ok" if db_ok else "error",
@@ -148,4 +163,5 @@ async def readiness_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -15,6 +15,7 @@ try:
     from slowapi.util import get_remote_address
     from slowapi.errors import RateLimitExceeded
     from slowapi import _rate_limit_exceeded_handler
+
     HAS_SLOWAPI = True
 except ImportError:
     HAS_SLOWAPI = False
@@ -58,7 +59,7 @@ class FallbackLimiter:
                 if len(history) >= max_requests:
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=f"Rate limit exceeded: {limit_str}. Please retry shortly."
+                        detail=f"Rate limit exceeded: {limit_str}. Please retry shortly.",
                     )
 
                 history.append(now)
@@ -70,6 +71,8 @@ class FallbackLimiter:
 
 
 if HAS_SLOWAPI:
-    limiter = SlowapiLimiter(key_func=get_remote_address, default_limits=["120/minute"], headers_enabled=True)
+    limiter = SlowapiLimiter(
+        key_func=get_remote_address, default_limits=["120/minute"], headers_enabled=True
+    )
 else:
     limiter = FallbackLimiter(default_limit=120, window_seconds=60)

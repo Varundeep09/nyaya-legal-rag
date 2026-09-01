@@ -66,7 +66,10 @@ def build_rag_prompt(query: str, context_chunks: List[Dict[str, Any]]) -> str:
             user_doc_blocks.append(f"{header}\n{body}")
         else:
             act_title = chunk.get("act", "Bharatiya Nagarik Suraksha Sanhita, 2023")
-            sec_title = chunk.get("section_title") or f"Section {chunk.get('section_number', '')}"
+            sec_title = (
+                chunk.get("section_title")
+                or f"Section {chunk.get('section_number', '')}"
+            )
             page = chunk.get("page_start", "")
             header = f"--- STATUTE SOURCE {idx}: {citation_key} ({act_title}, {sec_title}, Page {page}) ---"
             body = chunk.get("text", "").strip()

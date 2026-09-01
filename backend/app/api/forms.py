@@ -6,7 +6,7 @@ import os
 import io
 import zipfile
 import uuid
-from typing import List, Optional, Union
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -18,7 +18,13 @@ from app.core.models import StatutoryForm
 
 router = APIRouter(prefix="/forms", tags=["forms"])
 
-FORMS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "data", "forms")
+FORMS_DIR = os.path.join(
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ),
+    "data",
+    "forms",
+)
 
 
 class StatutoryFormOut(BaseModel):
@@ -38,7 +44,6 @@ class StatutoryFormOut(BaseModel):
         from_attributes = True
 
 
-
 @router.get("", response_model=List[StatutoryFormOut])
 async def list_statutory_forms(query: Optional[str] = None, q: Optional[str] = None):
     """
@@ -53,8 +58,12 @@ async def list_statutory_forms(query: Optional[str] = None, q: Optional[str] = N
         if search_term:
             q_lower = search_term.strip().lower()
             forms = [
-                f for f in forms
-                if q_lower in f.title.lower() or (f.enabling_section and q_lower in f.enabling_section.lower()) or q_lower in f.filename.lower() or str(f.form_number) == q_lower
+                f
+                for f in forms
+                if q_lower in f.title.lower()
+                or (f.enabling_section and q_lower in f.enabling_section.lower())
+                or q_lower in f.filename.lower()
+                or str(f.form_number) == q_lower
             ]
 
         return forms
@@ -68,7 +77,6 @@ async def search_statutory_forms(q: Optional[str] = None, query: Optional[str] =
     return await list_statutory_forms(query=query, q=q)
 
 
-
 @router.get("/download-all")
 async def download_all_forms_zip():
     """
@@ -77,7 +85,7 @@ async def download_all_forms_zip():
     if not os.path.exists(FORMS_DIR):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Forms directory not found on disk."
+            detail="Forms directory not found on disk.",
         )
 
     zip_buffer = io.BytesIO()
@@ -88,12 +96,16 @@ async def download_all_forms_zip():
                 zip_file.write(full_path, arcname=fname)
 
     zip_buffer.seek(0)
-    logger.info("Generated bulk forms zip archive with %d bytes.", len(zip_buffer.getvalue()))
+    logger.info(
+        "Generated bulk forms zip archive with %d bytes.", len(zip_buffer.getvalue())
+    )
 
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=BNSS_Statutory_Forms_1_to_58.zip"}
+        headers={
+            "Content-Disposition": "attachment; filename=BNSS_Statutory_Forms_1_to_58.zip"
+        },
     )
 
 
@@ -105,28 +117,28 @@ async def download_form_pdf(form_id: str):
     async with AsyncSessionLocal() as session:
         # Allow looking up by UUID id or numeric form_number
         if form_id.isdigit():
-            stmt = select(StatutoryForm).where(StatutoryForm.form_number == int(form_id))
+            stmt = select(StatutoryForm).where(
+                StatutoryForm.form_number == int(form_id)
+            )
         else:
             stmt = select(StatutoryForm).where(StatutoryForm.id == form_id)
-        
+
         result = await session.execute(stmt)
         form_obj = result.scalar_one_or_none()
 
         if not form_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Statutory form '{form_id}' not found."
+                detail=f"Statutory form '{form_id}' not found.",
             )
 
         file_path = os.path.join(FORMS_DIR, form_obj.filename)
         if not os.path.exists(file_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Form PDF file '{form_obj.filename}' missing on disk."
+                detail=f"Form PDF file '{form_obj.filename}' missing on disk.",
             )
 
         return FileResponse(
-            path=file_path,
-            filename=form_obj.filename,
-            media_type="application/pdf"
+            path=file_path, filename=form_obj.filename, media_type="application/pdf"
         )

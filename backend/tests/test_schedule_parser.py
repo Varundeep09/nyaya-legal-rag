@@ -5,7 +5,9 @@ Unit and integration tests for First Schedule (BNS Offence Classification) parse
 import pytest
 from app.ingestion.bns_chunker import extract_pages
 from app.ingestion.schedule_parser import parse_first_schedule
-from app.retrieval.direct_lookup import detect_act_and_section_intent, detect_section_intent
+from app.retrieval.direct_lookup import (
+    detect_act_and_section_intent,
+)
 from app.retrieval.hybrid_retriever import hybrid_search
 
 
@@ -14,7 +16,9 @@ def test_row_boundary_detection():
     Parses pages 158-165 and asserts bns_section '64(2)' and '65(1)' both exist
     as separate distinct rows without merging.
     """
-    pages_data = extract_pages("data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=165)
+    pages_data = extract_pages(
+        "data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=165
+    )
     records = parse_first_schedule(pages_data)
 
     sections = [r["bns_section"] for r in records]
@@ -34,7 +38,9 @@ def test_tail_extraction_known_row():
       - bailable: 'Non-bailable'
       - triable_court: 'Court of Session'
     """
-    pages_data = extract_pages("data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=165)
+    pages_data = extract_pages(
+        "data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=165
+    )
     records = parse_first_schedule(pages_data)
 
     row_64_2 = next((r for r in records if r["bns_section"] == "64(2)"), None)
@@ -57,12 +63,16 @@ def test_needs_review_flagged_when_tail_ambiguous():
     Verifies that rows with multi-line wrapped or ambiguous tail fields
     are flagged with needs_review=True rather than hallucinated or corrupt values.
     """
-    pages_data = extract_pages("data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=189)
+    pages_data = extract_pages(
+        "data/raw/bns_bare_act_2023.pdf", start_page=158, end_page=189
+    )
     records = parse_first_schedule(pages_data)
 
     flagged = [r for r in records if r["needs_review"]]
-    assert len(flagged) > 0, f"Expected at least 1 row flagged with needs_review=True, got {len(flagged)}"
-    
+    assert (
+        len(flagged) > 0
+    ), f"Expected at least 1 row flagged with needs_review=True, got {len(flagged)}"
+
     # E.g., Section 49 whose court text wraps across lines
     row_49 = next((r for r in records if r["bns_section"] == "49"), None)
     assert row_49 is not None

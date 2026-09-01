@@ -20,7 +20,7 @@ def test_direct_lookup_detects_section_query():
         "BNSS 103",
         "s 103",
         "what does section 103 say",
-        "explain section 103(1)"
+        "explain section 103(1)",
     ]
     for q in valid_queries:
         sec = detect_section_intent(q)
@@ -30,7 +30,7 @@ def test_direct_lookup_detects_section_query():
     negative_queries = [
         "how many police officers are needed",
         "can a police officer arrest someone without a warrant",
-        "bail conditions for bailable offence"
+        "bail conditions for bailable offence",
     ]
     for nq in negative_queries:
         res = detect_section_intent(nq)
@@ -47,8 +47,12 @@ async def test_direct_lookup_returns_correct_section(test_session):
 
     assert len(results) >= 1, "Expected results for section 35 direct lookup"
     for r in results:
-        assert r["section_number"] == "35", f"Expected section 35, got {r['section_number']}"
-        assert r["retrieval_method"] == "direct_lookup", f"Expected direct_lookup, got {r['retrieval_method']}"
+        assert (
+            r["section_number"] == "35"
+        ), f"Expected section 35, got {r['section_number']}"
+        assert (
+            r["retrieval_method"] == "direct_lookup"
+        ), f"Expected direct_lookup, got {r['retrieval_method']}"
         assert r["score"] == 1.0
 
 
@@ -58,13 +62,17 @@ async def test_hybrid_search_finds_relevant_section(test_session):
     Calls hybrid_search with 'arrest without warrant police officer' and asserts
     that Section 35 ('When police may arrest without warrant') appears in the top 10 results.
     """
-    results = await hybrid_search(test_session, "arrest without warrant police officer", top_k=10)
+    results = await hybrid_search(
+        test_session, "arrest without warrant police officer", top_k=10
+    )
 
     assert len(results) > 0, "Expected results for hybrid search"
     top_sections = [r["section_number"] for r in results]
     print(f"\n[Test Result] Top 10 retrieved section numbers: {top_sections}")
 
-    assert "35" in top_sections, f"Expected Section 35 in top 10 results, but got: {top_sections}"
+    assert (
+        "35" in top_sections
+    ), f"Expected Section 35 in top 10 results, but got: {top_sections}"
     assert results[0]["retrieval_method"] == "hybrid_rrf"
 
 
@@ -74,11 +82,15 @@ async def test_chapter_filter_is_enforced(test_session):
     Calls hybrid_search with a chapter filter ('XXXV' - Bail and Bonds)
     and asserts 100% of returned results match chapter=='XXXV'.
     """
-    results = await hybrid_search(test_session, "bail conditions", chapter_filter="XXXV", top_k=5)
+    results = await hybrid_search(
+        test_session, "bail conditions", chapter_filter="XXXV", top_k=5
+    )
 
     assert len(results) >= 1, "Expected results for chapter XXXV search"
     for r in results:
-        assert r["chapter"] == "XXXV", f"Expected chapter XXXV, got {r['chapter']} for chunk {r['chunk_id']}"
+        assert (
+            r["chapter"] == "XXXV"
+        ), f"Expected chapter XXXV, got {r['chapter']} for chunk {r['chunk_id']}"
 
 
 def test_rrf_fusion_math():

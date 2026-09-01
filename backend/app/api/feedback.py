@@ -7,7 +7,6 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
 from app.core.models import Feedback
@@ -31,7 +30,9 @@ class FeedbackResponse(BaseModel):
     status: str = "recorded"
 
 
-@router.post("/feedback", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/feedback", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED
+)
 async def submit_feedback(request: FeedbackCreateRequest):
     """
     Submit user feedback on a legal assistant response.
@@ -41,7 +42,7 @@ async def submit_feedback(request: FeedbackCreateRequest):
     if clean_rating not in ["up", "down"]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Rating must be either 'up' or 'down'."
+            detail="Rating must be either 'up' or 'down'.",
         )
 
     parsed_msg_id = None
@@ -69,15 +70,17 @@ async def submit_feedback(request: FeedbackCreateRequest):
         logger.error(f"Failed to record user feedback: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to record feedback in database."
+            detail="Failed to record feedback in database.",
         )
 
-    logger.info(f"Recorded feedback {feedback_row.id} ({feedback_row.rating}) for session '{feedback_row.session_id}'")
+    logger.info(
+        f"Recorded feedback {feedback_row.id} ({feedback_row.rating}) for session '{feedback_row.session_id}'"
+    )
 
     return FeedbackResponse(
         id=str(feedback_row.id),
         session_id=feedback_row.session_id,
         rating=feedback_row.rating,
         comment=feedback_row.comment,
-        status="recorded"
+        status="recorded",
     )

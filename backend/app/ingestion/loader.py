@@ -12,14 +12,12 @@ from app.core.logging import logger
 from app.ingestion.bns_chunker import (
     extract_pages,
     parse_chapters_and_sections,
-    DEFAULT_SOURCE_URI
+    DEFAULT_SOURCE_URI,
 )
 
 
 async def load_statute_chunks_to_db(
-    session: AsyncSession,
-    pdf_path: str = None,
-    stats: Optional[Dict[str, Any]] = None
+    session: AsyncSession, pdf_path: str = None, stats: Optional[Dict[str, Any]] = None
 ) -> int:
     """
     Idempotently ingests narrative BNSS statute chunks (pages 1-157) into PostgreSQL.
@@ -36,18 +34,24 @@ async def load_statute_chunks_to_db(
     pages_text = extract_pages(target_pdf, start_page=1, end_page=157)
 
     logger.info(f"Parsing chapters and sections across {len(pages_text)} pages...")
-    chunk_dicts = parse_chapters_and_sections(pages_text, source_uri=DEFAULT_SOURCE_URI, stats=stats)
+    chunk_dicts = parse_chapters_and_sections(
+        pages_text, source_uri=DEFAULT_SOURCE_URI, stats=stats
+    )
     logger.info(f"Generated {len(chunk_dicts)} statute chunks.")
 
     # Idempotency: Delete existing chunks for this source_uri first
-    logger.info(f"Deleting existing statute chunks for source_uri: {DEFAULT_SOURCE_URI}...")
+    logger.info(
+        f"Deleting existing statute chunks for source_uri: {DEFAULT_SOURCE_URI}..."
+    )
     await session.execute(
         delete(StatuteChunk).where(StatuteChunk.source_uri == DEFAULT_SOURCE_URI)
     )
     await session.commit()
 
     # Bulk insert StatuteChunk objects
-    logger.info(f"Bulk inserting {len(chunk_dicts)} StatuteChunk records into PostgreSQL...")
+    logger.info(
+        f"Bulk inserting {len(chunk_dicts)} StatuteChunk records into PostgreSQL..."
+    )
     statute_objects = [
         StatuteChunk(
             act=c["act"],
@@ -68,13 +72,15 @@ async def load_statute_chunks_to_db(
             chunk_id=c["chunk_id"],
             source_uri=c["source_uri"],
             references_json=c["references_json"],
-            embedding=None  # Embedding vector populated in later step
+            embedding=None,  # Embedding vector populated in later step
         )
         for c in chunk_dicts
     ]
 
     session.add_all(statute_objects)
     await session.commit()
-    logger.info(f"Successfully loaded {len(statute_objects)} statute chunks to database.")
+    logger.info(
+        f"Successfully loaded {len(statute_objects)} statute chunks to database."
+    )
 
     return len(statute_objects)

@@ -9,15 +9,19 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.core.models import StatuteChunk, OffenceClassification, UserDocument, UserDocumentChunk
+from app.core.models import (
+    StatuteChunk,
+    OffenceClassification,
+    UserDocument,
+    UserDocumentChunk,
+)
 from app.core.logging import logger
 from app.retrieval.embeddings import embed_query
 from app.retrieval.bm25_index import get_or_build_bm25_index, search_bm25
 from app.retrieval.direct_lookup import (
-    detect_section_intent,
     detect_act_and_section_intent,
     fetch_section_directly,
-    fetch_bns_offence_directly
+    fetch_bns_offence_directly,
 )
 
 
@@ -27,14 +31,14 @@ async def dense_search(
     top_k: int = 10,
     chapter_filter: Optional[str] = None,
     act_filter: Optional[str] = None,
-    section_filter: Optional[str] = None
+    section_filter: Optional[str] = None,
 ) -> List[Tuple[str, float]]:
     """
     Performs dense semantic retrieval using BAAI/bge-base-en-v1.5 embeddings
     and pgvector cosine distance across both StatuteChunk and OffenceClassification tables.
-    
+
     Applies metadata filters (chapter, act, section) as native SQL WHERE clauses.
-    
+
     Returns:
         List of (chunk_id, cosine_similarity) sorted descending by similarity.
     """
@@ -48,9 +52,8 @@ async def dense_search(
     cosine_dist = StatuteChunk.embedding.cosine_distance(query_emb)
     similarity = (1.0 - cosine_dist).label("similarity")
 
-    stmt = (
-        select(StatuteChunk.chunk_id, similarity)
-        .where(StatuteChunk.embedding.isnot(None))
+    stmt = select(StatuteChunk.chunk_id, similarity).where(
+        StatuteChunk.embedding.isnot(None)
     )
 
     # Apply native DB-level metadata filters for StatuteChunk
@@ -58,10 +61,7 @@ async def dense_search(
         stmt = stmt.where(StatuteChunk.chapter == chapter_filter)
     if act_filter:
         stmt = stmt.where(
-            or_(
-                StatuteChunk.act == act_filter,
-                StatuteChunk.act_short == act_filter
-            )
+            or_(StatuteChunk.act == act_filter, StatuteChunk.act_short == act_filter)
         )
     if section_filter:
         stmt = stmt.where(StatuteChunk.section_number == str(section_filter))
@@ -73,24 +73,33 @@ async def dense_search(
 
     # 2. Search OffenceClassification (BNS First Schedule offences)
     allow_offence = True
-    if chapter_filter and chapter_filter not in ("FIRST SCHEDULE", "THE FIRST SCHEDULE", "CLASSIFICATION OF OFFENCES", "1", "I"):
+    if chapter_filter and chapter_filter not in (
+        "FIRST SCHEDULE",
+        "THE FIRST SCHEDULE",
+        "CLASSIFICATION OF OFFENCES",
+        "1",
+        "I",
+    ):
         allow_offence = False
-    if act_filter and act_filter not in ("BNS", "Bharatiya Nyaya Sanhita, 2023", "Bharatiya Nyaya Sanhita"):
+    if act_filter and act_filter not in (
+        "BNS",
+        "Bharatiya Nyaya Sanhita, 2023",
+        "Bharatiya Nyaya Sanhita",
+    ):
         allow_offence = False
 
     if allow_offence:
         offence_cosine_dist = OffenceClassification.embedding.cosine_distance(query_emb)
         offence_sim = (1.0 - offence_cosine_dist).label("similarity")
 
-        offence_stmt = (
-            select(OffenceClassification.id, offence_sim)
-            .where(OffenceClassification.embedding.isnot(None))
+        offence_stmt = select(OffenceClassification.id, offence_sim).where(
+            OffenceClassification.embedding.isnot(None)
         )
         if section_filter:
             offence_stmt = offence_stmt.where(
                 or_(
                     OffenceClassification.bns_section == str(section_filter),
-                    OffenceClassification.bns_section.ilike(f"{section_filter}(%)")
+                    OffenceClassification.bns_section.ilike(f"{section_filter}(%)"),
                 )
             )
         offence_stmt = offence_stmt.order_by(offence_cosine_dist.asc()).limit(top_k)
@@ -106,24 +115,24 @@ async def dense_search(
 def reciprocal_rank_fusion(
     dense_results: List[Tuple[str, float]],
     bm25_results: List[Tuple[str, float]],
-    k: int = 60
+    k: int = 60,
 ) -> List[Dict[str, Any]]:
     """
     Fuses ranked dense and sparse results using Reciprocal Rank Fusion (RRF).
-    
+
     RRF Score formula:
         RRF_score(d) = sum_{m in models} (1.0 / (k + rank_m(d)))
-    
+
     NOTE ON PARAMETER k=60:
     The constant k=60 is the empirical standard established by Cormack, Clarke,
     and Buettcher (SIGIR 2009). It prevents top-ranked outliers in either list
     from dominating the fused score while maintaining high recall.
-    
+
     Args:
         dense_results: List of (chunk_id, dense_score) from vector search.
         bm25_results: List of (chunk_id, bm25_score) from BM25 sparse search.
         k: Smoothing constant (default 60).
-        
+
     Returns:
         List of dicts with fused score and per-model rank/score for debuggability,
         sorted descending by rrf_score.
@@ -139,7 +148,7 @@ def reciprocal_rank_fusion(
                 "dense_rank": rank,
                 "dense_score": score,
                 "bm25_rank": None,
-                "bm25_score": None
+                "bm25_score": None,
             }
         else:
             fused_map[chunk_id]["dense_rank"] = rank
@@ -155,7 +164,7 @@ def reciprocal_rank_fusion(
                 "dense_rank": None,
                 "dense_score": None,
                 "bm25_rank": rank,
-                "bm25_score": score
+                "bm25_score": score,
             }
         else:
             fused_map[chunk_id]["bm25_rank"] = rank
@@ -163,7 +172,9 @@ def reciprocal_rank_fusion(
         fused_map[chunk_id]["rrf_score"] += 1.0 / (k + rank)
 
     # Sort descending by fused RRF score
-    sorted_fused = sorted(fused_map.values(), key=lambda x: x["rrf_score"], reverse=True)
+    sorted_fused = sorted(
+        fused_map.values(), key=lambda x: x["rrf_score"], reverse=True
+    )
     return sorted_fused
 
 
@@ -171,7 +182,7 @@ async def _hydrate_chunks(
     session: AsyncSession,
     top_chunk_ids: List[str],
     meta_map: Dict[str, Dict[str, Any]],
-    retrieval_method: str = "hybrid_rrf"
+    retrieval_method: str = "hybrid_rrf",
 ) -> List[Dict[str, Any]]:
     """
     Hydrates full chunk records from both StatuteChunk and OffenceClassification tables
@@ -195,7 +206,9 @@ async def _hydrate_chunks(
 
     offence_by_id = {}
     if offence_uuids:
-        stmt = select(OffenceClassification).where(OffenceClassification.id.in_(offence_uuids))
+        stmt = select(OffenceClassification).where(
+            OffenceClassification.id.in_(offence_uuids)
+        )
         res = await session.execute(stmt)
         offence_by_id = {str(c.id): c for c in res.scalars().all()}
 
@@ -204,65 +217,89 @@ async def _hydrate_chunks(
         meta = meta_map.get(cid, {})
         if cid in statute_by_id:
             chunk = statute_by_id[cid]
-            final_results.append({
-                "chunk_id": chunk.chunk_id,
-                "act": chunk.act,
-                "act_short": chunk.act_short,
-                "chapter": chunk.chapter,
-                "chapter_title": chunk.chapter_title,
-                "section_number": chunk.section_number,
-                "section_title": chunk.section_title,
-                "subsection": chunk.subsection,
-                "clause": chunk.clause,
-                "text": chunk.text,
-                "page_start": chunk.page_start,
-                "page_end": chunk.page_end,
-                "has_proviso": chunk.has_proviso,
-                "has_illustration": chunk.has_illustration,
-                "has_exception": chunk.has_exception,
-                "references_json": chunk.references_json,
-                "retrieval_method": retrieval_method,
-                "score": round(meta.get("rrf_score", meta.get("dense_score", 1.0)), 6),
-                "dense_score": round(meta["dense_score"], 4) if meta.get("dense_score") is not None else None,
-                "dense_rank": meta.get("dense_rank"),
-                "bm25_score": round(meta["bm25_score"], 4) if meta.get("bm25_score") is not None else None,
-                "bm25_rank": meta.get("bm25_rank")
-            })
+            final_results.append(
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "act": chunk.act,
+                    "act_short": chunk.act_short,
+                    "chapter": chunk.chapter,
+                    "chapter_title": chunk.chapter_title,
+                    "section_number": chunk.section_number,
+                    "section_title": chunk.section_title,
+                    "subsection": chunk.subsection,
+                    "clause": chunk.clause,
+                    "text": chunk.text,
+                    "page_start": chunk.page_start,
+                    "page_end": chunk.page_end,
+                    "has_proviso": chunk.has_proviso,
+                    "has_illustration": chunk.has_illustration,
+                    "has_exception": chunk.has_exception,
+                    "references_json": chunk.references_json,
+                    "retrieval_method": retrieval_method,
+                    "score": round(
+                        meta.get("rrf_score", meta.get("dense_score", 1.0)), 6
+                    ),
+                    "dense_score": (
+                        round(meta["dense_score"], 4)
+                        if meta.get("dense_score") is not None
+                        else None
+                    ),
+                    "dense_rank": meta.get("dense_rank"),
+                    "bm25_score": (
+                        round(meta["bm25_score"], 4)
+                        if meta.get("bm25_score") is not None
+                        else None
+                    ),
+                    "bm25_rank": meta.get("bm25_rank"),
+                }
+            )
         elif cid.startswith("bns-sched1-"):
             raw_uuid = cid.replace("bns-sched1-", "")
             if raw_uuid in offence_by_id:
                 row = offence_by_id[raw_uuid]
-                final_results.append({
-                    "chunk_id": cid,
-                    "act": "Bharatiya Nyaya Sanhita, 2023",
-                    "act_short": "BNS",
-                    "chapter": "FIRST SCHEDULE",
-                    "chapter_title": "CLASSIFICATION OF OFFENCES",
-                    "section_number": row.bns_section,
-                    "section_title": f"BNS Section {row.bns_section}",
-                    "subsection": None,
-                    "clause": None,
-                    "text": (
-                        f"BNS Section {row.bns_section}: {row.offence_description}\n"
-                        f"Classification: {row.cognizable or 'N/A'}, {row.bailable or 'N/A'}, Triable by: {row.triable_court or 'N/A'}"
-                    ),
-                    "page_start": row.page_number,
-                    "page_end": row.page_number,
-                    "has_proviso": False,
-                    "has_illustration": False,
-                    "has_exception": False,
-                    "references_json": [],
-                    "retrieval_method": retrieval_method,
-                    "score": round(meta.get("rrf_score", meta.get("dense_score", 1.0)), 6),
-                    "cognizable": row.cognizable,
-                    "bailable": row.bailable,
-                    "triable_court": row.triable_court,
-                    "punishment": row.punishment,
-                    "dense_score": round(meta["dense_score"], 4) if meta.get("dense_score") is not None else None,
-                    "dense_rank": meta.get("dense_rank"),
-                    "bm25_score": round(meta["bm25_score"], 4) if meta.get("bm25_score") is not None else None,
-                    "bm25_rank": meta.get("bm25_rank")
-                })
+                final_results.append(
+                    {
+                        "chunk_id": cid,
+                        "act": "Bharatiya Nyaya Sanhita, 2023",
+                        "act_short": "BNS",
+                        "chapter": "FIRST SCHEDULE",
+                        "chapter_title": "CLASSIFICATION OF OFFENCES",
+                        "section_number": row.bns_section,
+                        "section_title": f"BNS Section {row.bns_section}",
+                        "subsection": None,
+                        "clause": None,
+                        "text": (
+                            f"BNS Section {row.bns_section}: {row.offence_description}\n"
+                            f"Classification: {row.cognizable or 'N/A'}, {row.bailable or 'N/A'}, Triable by: {row.triable_court or 'N/A'}"
+                        ),
+                        "page_start": row.page_number,
+                        "page_end": row.page_number,
+                        "has_proviso": False,
+                        "has_illustration": False,
+                        "has_exception": False,
+                        "references_json": [],
+                        "retrieval_method": retrieval_method,
+                        "score": round(
+                            meta.get("rrf_score", meta.get("dense_score", 1.0)), 6
+                        ),
+                        "cognizable": row.cognizable,
+                        "bailable": row.bailable,
+                        "triable_court": row.triable_court,
+                        "punishment": row.punishment,
+                        "dense_score": (
+                            round(meta["dense_score"], 4)
+                            if meta.get("dense_score") is not None
+                            else None
+                        ),
+                        "dense_rank": meta.get("dense_rank"),
+                        "bm25_score": (
+                            round(meta["bm25_score"], 4)
+                            if meta.get("bm25_score") is not None
+                            else None
+                        ),
+                        "bm25_rank": meta.get("bm25_rank"),
+                    }
+                )
     return final_results
 
 
@@ -273,7 +310,7 @@ async def hybrid_search(
     chapter_filter: Optional[str] = None,
     act_filter: Optional[str] = None,
     section_filter: Optional[str] = None,
-    retrieval_mode: str = "hybrid"
+    retrieval_mode: str = "hybrid",
 ) -> List[Dict[str, Any]]:
     """
     Main retrieval entrypoint for Nyaya:
@@ -286,11 +323,16 @@ async def hybrid_search(
        - Applies metadata filtering to sparse candidates.
        - Fuses results via Reciprocal Rank Fusion (k=60) or dense cosine ranking.
        - Hydrates top_k chunk records from PostgreSQL.
-       
+
     Returns:
         List of complete chunk dictionaries with metadata and score fields.
     """
-    logger.info("Executing %s search for query: '%s' (top_k=%d)", retrieval_mode, query_text, top_k)
+    logger.info(
+        "Executing %s search for query: '%s' (top_k=%d)",
+        retrieval_mode,
+        query_text,
+        top_k,
+    )
 
     # 1. Check for Direct Section Lookup intent (Hybrid mode only)
     if retrieval_mode == "hybrid":
@@ -299,7 +341,10 @@ async def hybrid_search(
             intent is not None
             and not chapter_filter
             and not act_filter
-            and (not section_filter or section_filter in (intent["section"], intent["base_section"]))
+            and (
+                not section_filter
+                or section_filter in (intent["section"], intent["base_section"])
+            )
         ):
             act = intent["act"]
             sec = intent["section"]
@@ -311,13 +356,21 @@ async def hybrid_search(
                 if not bns_results and sec != base_sec:
                     bns_results = await fetch_bns_offence_directly(session, base_sec)
                 if bns_results:
-                    logger.info("Direct BNS offence lookup resolved %d rows for Section %s.", len(bns_results), sec)
+                    logger.info(
+                        "Direct BNS offence lookup resolved %d rows for Section %s.",
+                        len(bns_results),
+                        sec,
+                    )
                     return bns_results[:top_k]
             elif act == "BNSS":
                 # Direct BNSS statute chunk lookup
                 direct_results = await fetch_section_directly(session, base_sec)
                 if direct_results:
-                    logger.info("Direct BNSS section lookup resolved %d chunks for Section %s.", len(direct_results), base_sec)
+                    logger.info(
+                        "Direct BNSS section lookup resolved %d chunks for Section %s.",
+                        len(direct_results),
+                        base_sec,
+                    )
                     return direct_results[:top_k]
             else:  # AMBIGUOUS
                 # Try BNSS statute_chunk first; if no match found, fallback to BNS offence_classification
@@ -326,7 +379,7 @@ async def hybrid_search(
                     logger.info(
                         "Direct section lookup (ambiguous query) resolved %d BNSS chunks for Section %s.",
                         len(direct_results),
-                        base_sec
+                        base_sec,
                     )
                     return direct_results[:top_k]
 
@@ -335,7 +388,7 @@ async def hybrid_search(
                     logger.info(
                         "Direct section lookup fallback resolved %d BNS offence rows for Section %s.",
                         len(bns_results),
-                        sec
+                        sec,
                     )
                     return bns_results[:top_k]
 
@@ -349,7 +402,7 @@ async def hybrid_search(
         top_k=candidate_depth if retrieval_mode == "hybrid" else top_k,
         chapter_filter=chapter_filter,
         act_filter=act_filter,
-        section_filter=section_filter
+        section_filter=section_filter,
     )
 
     if retrieval_mode == "dense_only":
@@ -360,16 +413,20 @@ async def hybrid_search(
             cid: {"dense_score": score, "dense_rank": rank}
             for rank, (cid, score) in enumerate(dense_results[:top_k], start=1)
         }
-        return await _hydrate_chunks(session, top_chunk_ids, meta_map, retrieval_method="dense_only")
+        return await _hydrate_chunks(
+            session, top_chunk_ids, meta_map, retrieval_method="dense_only"
+        )
 
     # Sparse BM25 Search
     bm25_index, chunk_id_list = await get_or_build_bm25_index(session)
-    bm25_all = search_bm25(bm25_index, chunk_id_list, query_text, top_k=len(chunk_id_list))
+    bm25_all = search_bm25(
+        bm25_index, chunk_id_list, query_text, top_k=len(chunk_id_list)
+    )
 
     # If filters are provided, filter BM25 candidates to matching chunk_ids
     if chapter_filter or act_filter or section_filter:
         valid_chunk_ids: Set[str] = set()
-        
+
         # StatuteChunk valid IDs
         filter_stmt = select(StatuteChunk.chunk_id)
         if chapter_filter:
@@ -377,21 +434,32 @@ async def hybrid_search(
         if act_filter:
             filter_stmt = filter_stmt.where(
                 or_(
-                    StatuteChunk.act == act_filter,
-                    StatuteChunk.act_short == act_filter
+                    StatuteChunk.act == act_filter, StatuteChunk.act_short == act_filter
                 )
             )
         if section_filter:
-            filter_stmt = filter_stmt.where(StatuteChunk.section_number == str(section_filter))
+            filter_stmt = filter_stmt.where(
+                StatuteChunk.section_number == str(section_filter)
+            )
 
         valid_ids_res = await session.execute(filter_stmt)
         valid_chunk_ids.update(valid_ids_res.scalars().all())
 
         # OffenceClassification valid IDs
         allow_offence = True
-        if chapter_filter and chapter_filter not in ("FIRST SCHEDULE", "THE FIRST SCHEDULE", "CLASSIFICATION OF OFFENCES", "1", "I"):
+        if chapter_filter and chapter_filter not in (
+            "FIRST SCHEDULE",
+            "THE FIRST SCHEDULE",
+            "CLASSIFICATION OF OFFENCES",
+            "1",
+            "I",
+        ):
             allow_offence = False
-        if act_filter and act_filter not in ("BNS", "Bharatiya Nyaya Sanhita, 2023", "Bharatiya Nyaya Sanhita"):
+        if act_filter and act_filter not in (
+            "BNS",
+            "Bharatiya Nyaya Sanhita, 2023",
+            "Bharatiya Nyaya Sanhita",
+        ):
             allow_offence = False
 
         if allow_offence:
@@ -400,14 +468,16 @@ async def hybrid_search(
                 offence_filter_stmt = offence_filter_stmt.where(
                     or_(
                         OffenceClassification.bns_section == str(section_filter),
-                        OffenceClassification.bns_section.ilike(f"{section_filter}(%)")
+                        OffenceClassification.bns_section.ilike(f"{section_filter}(%)"),
                     )
                 )
             res_off = await session.execute(offence_filter_stmt)
             for row_id in res_off.scalars().all():
                 valid_chunk_ids.add(f"bns-sched1-{row_id}")
 
-        bm25_results = [(cid, sc) for cid, sc in bm25_all if cid in valid_chunk_ids][:candidate_depth]
+        bm25_results = [(cid, sc) for cid, sc in bm25_all if cid in valid_chunk_ids][
+            :candidate_depth
+        ]
     else:
         bm25_results = bm25_all[:candidate_depth]
 
@@ -423,21 +493,20 @@ async def hybrid_search(
     fused_meta_map = {item["chunk_id"]: item for item in top_fused}
 
     # 4. Hydrate full records from DB
-    final_results = await _hydrate_chunks(session, top_chunk_ids, fused_meta_map, retrieval_method="hybrid_rrf")
+    final_results = await _hydrate_chunks(
+        session, top_chunk_ids, fused_meta_map, retrieval_method="hybrid_rrf"
+    )
     logger.info("Hybrid search retrieved %d ranked chunks.", len(final_results))
     return final_results
 
 
 async def search_user_documents(
-    session: AsyncSession,
-    session_id: str,
-    query_text: str,
-    top_k: int = 5
+    session: AsyncSession, session_id: str, query_text: str, top_k: int = 5
 ) -> List[Dict[str, Any]]:
     """
     Performs session-isolated dense vector search strictly within user_document_chunk
     records where session_id matches the current session.
-    
+
     Returns:
         List of user document chunk dictionaries with source metadata and score.
     """
@@ -448,7 +517,9 @@ async def search_user_documents(
 
     # Cosine distance operator in pgvector is <=>
     # Cosine similarity = 1.0 - distance
-    distance_expr = UserDocumentChunk.embedding.cosine_distance(query_embedding).label("distance")
+    distance_expr = UserDocumentChunk.embedding.cosine_distance(query_embedding).label(
+        "distance"
+    )
     similarity_expr = (1.0 - distance_expr).label("similarity")
 
     stmt = (
@@ -457,7 +528,7 @@ async def search_user_documents(
         .where(
             UserDocumentChunk.session_id == session_id,
             UserDocument.status == "ready",
-            UserDocumentChunk.embedding.is_not(None)
+            UserDocumentChunk.embedding.is_not(None),
         )
         .order_by(distance_expr)
         .limit(top_k)
@@ -469,27 +540,31 @@ async def search_user_documents(
     results = []
     for chunk, filename, similarity in rows:
         sim_val = float(similarity) if similarity is not None else 0.0
-        results.append({
-            "chunk_id": f"userdoc-{chunk.document_id}-{chunk.chunk_index}",
-            "document_id": str(chunk.document_id),
-            "session_id": chunk.session_id,
-            "filename": filename,
-            "page_number": chunk.page_number or 1,
-            "chunk_index": chunk.chunk_index,
-            "text": chunk.text,
-            "score": round(sim_val, 4),
-            "dense_score": round(sim_val, 4),
-            "retrieval_method": "user_document",
-            "act": "User Uploaded Document",
-            "act_short": "UserDoc",
-            "section_number": f"Doc: {filename}",
-            "section_title": f"{filename} (Page {chunk.page_number or 1})",
-            "page_start": chunk.page_number or 1,
-            "page_end": chunk.page_number or 1
-        })
+        results.append(
+            {
+                "chunk_id": f"userdoc-{chunk.document_id}-{chunk.chunk_index}",
+                "document_id": str(chunk.document_id),
+                "session_id": chunk.session_id,
+                "filename": filename,
+                "page_number": chunk.page_number or 1,
+                "chunk_index": chunk.chunk_index,
+                "text": chunk.text,
+                "score": round(sim_val, 4),
+                "dense_score": round(sim_val, 4),
+                "retrieval_method": "user_document",
+                "act": "User Uploaded Document",
+                "act_short": "UserDoc",
+                "section_number": f"Doc: {filename}",
+                "section_title": f"{filename} (Page {chunk.page_number or 1})",
+                "page_start": chunk.page_number or 1,
+                "page_end": chunk.page_number or 1,
+            }
+        )
 
     logger.info(
         "User document search for session '%s' returned %d chunks (top score: %.4f).",
-        session_id, len(results), results[0]["score"] if results else 0.0
+        session_id,
+        len(results),
+        results[0]["score"] if results else 0.0,
     )
     return results

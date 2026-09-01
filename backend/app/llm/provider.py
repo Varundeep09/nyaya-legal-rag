@@ -11,7 +11,10 @@ import google.generativeai as genai
 
 from app.core.config import Settings
 from app.core.logging import logger
-from app.llm.prompts import NYAYA_SYSTEM_PROMPT, build_rag_prompt, format_chunk_citation_key
+from app.llm.prompts import (
+    NYAYA_SYSTEM_PROMPT,
+    format_chunk_citation_key,
+)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 
@@ -27,7 +30,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         system_prompt: str = NYAYA_SYSTEM_PROMPT,
-        context_chunks: Optional[List[Dict[str, Any]]] = None
+        context_chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[str, None]:
         """Asynchronously streams response tokens from the LLM provider."""
         yield ""
@@ -46,11 +49,17 @@ class GeminiProvider(LLMProvider):
         self.model_name = model_name
         self._is_configured = False
 
-        if self.api_key and self.api_key not in ("your_gemini_api_key_here", "dev-secret-key-change-in-production"):
+        if self.api_key and self.api_key not in (
+            "your_gemini_api_key_here",
+            "dev-secret-key-change-in-production",
+        ):
             try:
                 genai.configure(api_key=self.api_key)
                 self._is_configured = True
-                logger.info("Configured Google Gemini API provider with model: %s", self.model_name)
+                logger.info(
+                    "Configured Google Gemini API provider with model: %s",
+                    self.model_name,
+                )
             except Exception as e:
                 logger.warning("Failed to configure Google Gemini API: %s", e)
 
@@ -58,7 +67,7 @@ class GeminiProvider(LLMProvider):
         self,
         prompt: str,
         system_prompt: str = NYAYA_SYSTEM_PROMPT,
-        context_chunks: Optional[List[Dict[str, Any]]] = None
+        context_chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Streams response tokens from Google Gemini API.
@@ -72,18 +81,17 @@ class GeminiProvider(LLMProvider):
             "model": self.model_name,
             "is_real_llm": False,
             "finish_reason": None,
-            "usage": None
+            "usage": None,
         }
 
         if self._is_configured:
             try:
                 model = genai.GenerativeModel(
-                    model_name=self.model_name,
-                    system_instruction=system_prompt
+                    model_name=self.model_name, system_instruction=system_prompt
                 )
                 response = await model.generate_content_async(prompt, stream=True)
                 last_finish_reason = None
-                
+
                 async for chunk in response:
                     if chunk.candidates:
                         last_finish_reason = str(chunk.candidates[0].finish_reason)
@@ -103,10 +111,11 @@ class GeminiProvider(LLMProvider):
                     usage_dict = {
                         "prompt_tokens": prompt_toks,
                         "candidate_tokens": cand_toks,
-                        "total_tokens": tot_toks
+                        "total_tokens": tot_toks,
                     }
 
-                from app.core.metrics import calculate_gemini_cost, record_llm_usage
+                from app.core.metrics import record_llm_usage
+
                 cost_usd = record_llm_usage(self.model_name, prompt_toks, cand_toks)
 
                 self.last_call_metadata = {
@@ -115,20 +124,20 @@ class GeminiProvider(LLMProvider):
                     "is_real_llm": True,
                     "finish_reason": last_finish_reason or "STOP",
                     "usage": usage_dict,
-                    "estimated_cost_usd": cost_usd
+                    "estimated_cost_usd": cost_usd,
                 }
                 logger.info(
                     "REAL GEMINI API CALL PROOF: model=%s | finish_reason=%s | cost=$%.6f | usage=%s",
                     self.model_name,
                     last_finish_reason,
                     cost_usd,
-                    usage_dict
+                    usage_dict,
                 )
                 return
             except Exception as e:
                 logger.error(
                     "REAL GEMINI API CALL FAILED: %s. Engaging visibly marked fallback.",
-                    e
+                    e,
                 )
 
         # Explicit fallback path for unconfigured credentials (LOUD & VISIBLE per Part 2)
@@ -138,21 +147,23 @@ class GeminiProvider(LLMProvider):
             "model": "none",
             "is_real_llm": False,
             "finish_reason": "TEMPLATE_FALLBACK",
-            "usage": {"prompt_tokens": 0, "candidate_tokens": 0, "total_tokens": 0}
+            "usage": {"prompt_tokens": 0, "candidate_tokens": 0, "total_tokens": 0},
         }
 
         yield "[FALLBACK-NO-LLM] Based on the statutory provisions:\n\n"
         await asyncio.sleep(0.02)
 
-        for chunk in (context_chunks or []):
+        for chunk in context_chunks or []:
             citation = format_chunk_citation_key(chunk)
-            sec_title = chunk.get("section_title") or f"Section {chunk.get('section_number')}"
+            sec_title = (
+                chunk.get("section_title") or f"Section {chunk.get('section_number')}"
+            )
             text = chunk.get("text", "").strip()
 
             # Format succinct synthesized point
             first_para = text.split("\n\n")[0] if "\n\n" in text else text
             summary_snippet = first_para[:350].strip()
-            
+
             yield f"• Under {citation} ({sec_title}), {summary_snippet} {citation}\n\n"
             await asyncio.sleep(0.03)
 
@@ -169,7 +180,7 @@ class OllamaProvider(LLMProvider):
         self,
         prompt: str,
         system_prompt: str = NYAYA_SYSTEM_PROMPT,
-        context_chunks: Optional[List[Dict[str, Any]]] = None
+        context_chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[str, None]:
         """Streams response tokens from local Ollama instance."""
         import httpx
@@ -180,7 +191,7 @@ class OllamaProvider(LLMProvider):
             "model": self.model_name,
             "prompt": prompt,
             "system": system_prompt,
-            "stream": True
+            "stream": True,
         }
 
         try:
@@ -197,7 +208,7 @@ class OllamaProvider(LLMProvider):
                 "model": self.model_name,
                 "is_real_llm": True,
                 "finish_reason": "STOP",
-                "usage": {}
+                "usage": {},
             }
         except Exception as e:
             logger.error("Ollama connection error: %s", e)
@@ -207,13 +218,14 @@ class OllamaProvider(LLMProvider):
                 "model": self.model_name,
                 "is_real_llm": False,
                 "finish_reason": "ERROR",
-                "usage": {}
+                "usage": {},
             }
 
 
 def get_llm_provider(settings: Optional[Settings] = None) -> LLMProvider:
     """Factory function returning the configured LLM provider instance."""
     from app.core.config import Settings
+
     cfg = settings or Settings()
 
     if cfg.LLM_PROVIDER.lower() == "ollama":

@@ -26,22 +26,26 @@ def tokenize(text: str) -> List[str]:
     """
     if not text:
         return []
-    return re.findall(r'\b[a-zA-Z0-9]+\b', text.lower())
+    return re.findall(r"\b[a-zA-Z0-9]+\b", text.lower())
 
 
 async def build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, List[str]]:
     """
     Fetches all statute_chunk and offence_classification rows from PostgreSQL,
     tokenizes their text fields, and builds a unified in-memory BM25Okapi index.
-    
+
     Returns:
         Tuple of (bm25_index, chunk_id_list) where chunk_id_list[i] maps back
         to the chunk_id for BM25 document i.
     """
-    logger.info("Building in-memory BM25 index from statute_chunk & offence_classification records...")
-    
+    logger.info(
+        "Building in-memory BM25 index from statute_chunk & offence_classification records..."
+    )
+
     # 1. Statute Chunks (BNSS)
-    stmt_statute = select(StatuteChunk.chunk_id, StatuteChunk.text).order_by(StatuteChunk.id)
+    stmt_statute = select(StatuteChunk.chunk_id, StatuteChunk.text).order_by(
+        StatuteChunk.id
+    )
     res_statute = await session.execute(stmt_statute)
     rows_statute = res_statute.all()
 
@@ -53,7 +57,7 @@ async def build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, List[str]]
         OffenceClassification.punishment,
         OffenceClassification.cognizable,
         OffenceClassification.bailable,
-        OffenceClassification.triable_court
+        OffenceClassification.triable_court,
     ).order_by(OffenceClassification.page_number, OffenceClassification.id)
     res_offence = await session.execute(stmt_offence)
     rows_offence = res_offence.all()
@@ -68,7 +72,9 @@ async def build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, List[str]]
     for r in rows_offence:
         row_id, sec, desc, pun, cog, bail, court = r
         cid = f"bns-sched1-{row_id}"
-        full_text = f"BNS Section {sec}: {desc} {pun} {cog or ''} {bail or ''} {court or ''}"
+        full_text = (
+            f"BNS Section {sec}: {desc} {pun} {cog or ''} {bail or ''} {court or ''}"
+        )
         chunk_ids.append(cid)
         tokenized_corpus.append(tokenize(full_text))
 
@@ -77,25 +83,25 @@ async def build_bm25_index(session: AsyncSession) -> Tuple[BM25Okapi, List[str]]
         return BM25Okapi([[]]), []
 
     bm25 = BM25Okapi(tokenized_corpus)
-    logger.info("Successfully built BM25 index for %d unified chunks (statute + offence schedule).", len(chunk_ids))
+    logger.info(
+        "Successfully built BM25 index for %d unified chunks (statute + offence schedule).",
+        len(chunk_ids),
+    )
     return bm25, chunk_ids
 
 
 def search_bm25(
-    bm25_index: BM25Okapi,
-    chunk_id_list: List[str],
-    query: str,
-    top_k: int = 10
+    bm25_index: BM25Okapi, chunk_id_list: List[str], query: str, top_k: int = 10
 ) -> List[Tuple[str, float]]:
     """
     Searches the BM25 index for a given query and returns top_k results.
-    
+
     Args:
         bm25_index: The initialized BM25Okapi index.
         chunk_id_list: List of chunk_ids corresponding 1-to-1 with documents in index.
         query: Search query text.
         top_k: Maximum number of ranked results to return.
-        
+
     Returns:
         List of (chunk_id, bm25_score) sorted descending by score.
     """

@@ -42,7 +42,7 @@ async def test_statute_chunk_crud_with_vector():
             chunk_id=unique_chunk_id,
             source_uri="f:/Dhron AI/Assignment/BNS bare act 2023.pdf",
             references_json=["section 35(3)"],
-            embedding=dummy_vector
+            embedding=dummy_vector,
         )
 
         session.add(chunk)

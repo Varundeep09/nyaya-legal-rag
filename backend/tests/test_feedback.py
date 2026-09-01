@@ -15,7 +15,7 @@ async def test_submit_feedback_valid():
         payload = {
             "session_id": "test-feedback-session-1",
             "rating": "up",
-            "comment": "Section 35 arrest conditions were explained accurately."
+            "comment": "Section 35 arrest conditions were explained accurately.",
         }
         response = await ac.post("/api/v1/feedback", json=payload)
         assert response.status_code == 201
@@ -24,7 +24,9 @@ async def test_submit_feedback_valid():
         assert data["session_id"] == "test-feedback-session-1"
         assert data["rating"] == "up"
         assert data["status"] == "recorded"
-        assert data["comment"] == "Section 35 arrest conditions were explained accurately."
+        assert (
+            data["comment"] == "Section 35 arrest conditions were explained accurately."
+        )
 
 
 @pytest.mark.asyncio
@@ -35,7 +37,7 @@ async def test_submit_feedback_invalid_rating():
         payload = {
             "session_id": "test-feedback-session-2",
             "rating": "neutral",
-            "comment": "Average answer"
+            "comment": "Average answer",
         }
         response = await ac.post("/api/v1/feedback", json=payload)
         assert response.status_code == 422

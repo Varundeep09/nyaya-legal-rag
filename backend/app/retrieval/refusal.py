@@ -22,7 +22,7 @@ RRF_SCORE_FLOOR = 0.030
 def should_refuse(
     results: List[Dict[str, Any]],
     dense_threshold: float = DENSE_SIMILARITY_THRESHOLD,
-    rrf_floor: float = RRF_SCORE_FLOOR
+    rrf_floor: float = RRF_SCORE_FLOOR,
 ) -> bool:
     """
     Determines whether a retrieval result should trigger a refusal:
@@ -30,7 +30,7 @@ def should_refuse(
     2. Empty result sets are ALWAYS refused.
     3. For hybrid retrieval: if top candidate dense cosine similarity < 0.68,
        the query is out of statutory scope and is refused.
-       
+
     Returns:
         True if the query should be refused without calling the LLM; False otherwise.
     """
@@ -44,7 +44,7 @@ def should_refuse(
     if top_chunk.get("retrieval_method") == "direct_lookup":
         logger.info(
             "Direct section lookup hit for Section %s -> bypassing refusal threshold.",
-            top_chunk.get("section_number")
+            top_chunk.get("section_number"),
         )
         return False
 
@@ -55,7 +55,7 @@ def should_refuse(
                 "Refusal triggered: top dense similarity %.4f < threshold %.2f (top chunk %s).",
                 dense_score,
                 dense_threshold,
-                top_chunk.get("chunk_id")
+                top_chunk.get("chunk_id"),
             )
             return True
         return False
@@ -66,7 +66,7 @@ def should_refuse(
         logger.info(
             "Refusal triggered: top RRF score %.6f < floor %.4f.",
             fused_score,
-            rrf_floor
+            rrf_floor,
         )
         return True
 
