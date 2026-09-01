@@ -178,22 +178,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Trivy Vulnerability Scanner on Backend Image
-        uses: aquasecurity/trivy-action@v0.30.0
-        with:
-          image-ref: ghcr.io/${{ steps.repo_name.outputs.REPO }}/backend:${{ github.sha }}
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+      - name: Install Official Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Run Trivy Vulnerability Scanner on Frontend Image
-        uses: aquasecurity/trivy-action@v0.30.0
+      - name: Verify Trivy CLI Installation
+        run: trivy --version
+
+      - name: Scan Backend Container Image with Trivy CLI
+        run: |
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --vuln-type os,library \
+            --ignore-unfixed \
+            --exit-code 0 \
+            --format table \
+            ghcr.io/${{ steps.repo_name.outputs.REPO }}/backend:${{ github.sha }}
+
+      - name: Scan Frontend Container Image with Trivy CLI
+        run: |
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --vuln-type os,library \
+            --ignore-unfixed \
+            --exit-code 0 \
+            --format table \
+            ghcr.io/${{ steps.repo_name.outputs.REPO }}/frontend:${{ github.sha }}
+
+      - name: Generate SARIF Security Report for Backend
+        if: always()
+        run: |
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --vuln-type os,library \
+            --ignore-unfixed \
+            --format sarif \
+            --output trivy-results.sarif \
+            ghcr.io/${{ steps.repo_name.outputs.REPO }}/backend:${{ github.sha }} || true
+
+      - name: Upload SARIF Security Report to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
-          image-ref: ghcr.io/${{ steps.repo_name.outputs.REPO }}/frontend:${{ github.sha }}
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          sarif_file: 'trivy-results.sarif'
