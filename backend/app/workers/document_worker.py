@@ -19,7 +19,6 @@ from app.core.logging import logger
 from app.core.models import UserDocument, UserDocumentChunk
 from app.retrieval.embeddings import embed_passages
 
-
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
 
