@@ -143,7 +143,7 @@ The system was evaluated against all requirements of the specification brief:
 
 ## 4. How to Run with Ollama (Offline Local LLM)
 
-Nyaya includes an implementation for offline local LLM text generation via Ollama (`app/llm/provider.py`):
+Nyaya's LLM abstraction layer includes a dedicated provider implementation (`OllamaProvider` in `backend/app/llm/provider.py`) using `httpx` asynchronous HTTP streaming against Ollama's native `/api/generate` endpoint:
 
 1. **Install and Run Ollama on host machine**:
    ```bash

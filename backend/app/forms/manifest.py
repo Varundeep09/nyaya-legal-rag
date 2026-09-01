@@ -66,41 +66,27 @@ async def sync_forms_to_db(
     """
     logger.info("Syncing %d statutory forms to PostgreSQL...", len(forms_data))
 
-    # Fetch existing form records
-    stmt = select(StatutoryForm)
-    result = await session.execute(stmt)
-    existing_by_num = {f.form_number: f for f in result.scalars().all()}
+    # Delete existing form records for clean idempotent sync
+    from sqlalchemy import delete
+    await session.execute(delete(StatutoryForm))
+    await session.flush()
 
     synced_count = 0
     for f in forms_data:
         form_num = f["form_number"]
-        if form_num in existing_by_num:
-            # Update existing
-            row = existing_by_num[form_num]
-            row.title = f["title"]
-            row.enabling_section = f.get("enabling_section")
-            row.page_start = f["page_start"]
-            row.page_end = f["page_end"]
-            row.filename = f["filename"]
-            row.byte_size = f["byte_size"]
-            row.sha256 = f["sha256"]
-            row.extraction_confidence = f["extraction_confidence"]
-            row.needs_review = f.get("needs_review", False)
-        else:
-            # Insert new
-            row = StatutoryForm(
-                form_number=form_num,
-                title=f["title"],
-                enabling_section=f.get("enabling_section"),
-                page_start=f["page_start"],
-                page_end=f["page_end"],
-                filename=f["filename"],
-                byte_size=f["byte_size"],
-                sha256=f["sha256"],
-                extraction_confidence=f["extraction_confidence"],
-                needs_review=f.get("needs_review", False),
-            )
-            session.add(row)
+        row = StatutoryForm(
+            form_number=form_num,
+            title=f["title"],
+            enabling_section=f.get("enabling_section"),
+            page_start=f["page_start"],
+            page_end=f["page_end"],
+            filename=f["filename"],
+            byte_size=f["byte_size"],
+            sha256=f["sha256"],
+            extraction_confidence=f["extraction_confidence"],
+            needs_review=f.get("needs_review", False),
+        )
+        session.add(row)
         synced_count += 1
 
     await session.commit()
