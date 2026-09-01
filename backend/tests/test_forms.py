@@ -4,15 +4,17 @@ Validates dynamic title scraping (zero hardcoding), multi-page boundary detectio
 manifest verification against disk files, and idempotent re-extraction.
 """
 
-import os
 import ast
-import json
 import hashlib
+import json
+import os
+
 import pytest
+
 from app.forms.form_extractor import (
-    slugify,
     detect_form_boundaries,
     extract_form_pdf,
+    slugify,
 )
 from app.forms.manifest import generate_manifest
 

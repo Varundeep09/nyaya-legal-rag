@@ -3,16 +3,17 @@ Async loader module to ingest narrative BNSS statute chunks into PostgreSQL data
 """
 
 import os
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.models import StatuteChunk
 from app.core.logging import logger
+from app.core.models import StatuteChunk
 from app.ingestion.bns_chunker import (
+    DEFAULT_SOURCE_URI,
     extract_pages,
     parse_chapters_and_sections,
-    DEFAULT_SOURCE_URI,
 )
 
 

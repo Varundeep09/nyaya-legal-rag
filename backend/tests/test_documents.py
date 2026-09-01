@@ -6,17 +6,18 @@ cascade deletion, and prompt-injection defense.
 
 import os
 import uuid
-import pytest
+
 import fitz
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy import select, func
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.core.db import get_db
 from app.core.models import UserDocument, UserDocumentChunk
-from app.workers.document_worker import process_user_document, scan_for_prompt_injection
+from app.main import app
 from app.retrieval.hybrid_retriever import search_user_documents
+from app.workers.document_worker import process_user_document, scan_for_prompt_injection
 
 
 def create_sample_pdf_bytes(text_content: str) -> bytes:

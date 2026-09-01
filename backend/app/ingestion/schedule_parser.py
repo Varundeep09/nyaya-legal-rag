@@ -4,7 +4,8 @@ Extracts BNS offence classification entries across pages 158-189 into structured
 """
 
 import re
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
+
 from app.core.logging import logger
 from app.ingestion.bns_chunker import clean_page_text
 

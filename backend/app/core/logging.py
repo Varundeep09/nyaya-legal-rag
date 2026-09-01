@@ -2,8 +2,8 @@
 Structured JSON logging module with request ID propagation stub.
 """
 
-import logging
 import json
+import logging
 import sys
 from typing import Any, Dict
 

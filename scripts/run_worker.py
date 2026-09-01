@@ -1,6 +1,7 @@
-import sys
-import os
 import asyncio
+import os
+import sys
+
 from arq import run_worker
 
 sys.path.insert(

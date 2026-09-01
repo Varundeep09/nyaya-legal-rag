@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if backend_dir not in sys.path:
@@ -7,9 +7,9 @@ if backend_dir not in sys.path:
 
 import pytest_asyncio  # noqa: E402
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
     AsyncSession,
     async_sessionmaker,
+    create_async_engine,
 )  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 

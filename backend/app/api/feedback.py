@@ -5,12 +5,13 @@ Stores user ratings and comments on chat responses in PostgreSQL.
 
 import uuid
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.db import AsyncSessionLocal
-from app.core.models import Feedback
 from app.core.logging import logger
+from app.core.models import Feedback
 
 router = APIRouter(tags=["Feedback"])
 

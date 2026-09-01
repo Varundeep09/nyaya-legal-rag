@@ -5,32 +5,34 @@ readiness checks, Prometheus metrics instrumentation, rate limiting, and feedbac
 
 import time
 from contextlib import asynccontextmanager
+
+import redis.asyncio as aioredis
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-import redis.asyncio as aioredis
-from app.core.config import settings
-from app.core.db import init_db, engine, AsyncSessionLocal
-from app.core.logging import logger
-from app.core.limiter import (
-    limiter,
-    RateLimitExceeded,
-    _rate_limit_exceeded_handler,
-    HAS_SLOWAPI,
-)
-from app.core.metrics import (
-    REQUEST_COUNT,
-    REQUEST_DURATION,
-    DB_HEALTH_GAUGE,
-    REDIS_HEALTH_GAUGE,
-    metrics_endpoint,
-)
-from app.api.search import router as search_router
+
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
-from app.api.forms import router as forms_router
 from app.api.feedback import router as feedback_router
-from fastapi.middleware.cors import CORSMiddleware
+from app.api.forms import router as forms_router
+from app.api.search import router as search_router
+from app.core.config import settings
+from app.core.db import AsyncSessionLocal, engine, init_db
+from app.core.limiter import (
+    HAS_SLOWAPI,
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
+    limiter,
+)
+from app.core.logging import logger
+from app.core.metrics import (
+    DB_HEALTH_GAUGE,
+    REDIS_HEALTH_GAUGE,
+    REQUEST_COUNT,
+    REQUEST_DURATION,
+    metrics_endpoint,
+)
 
 
 @asynccontextmanager

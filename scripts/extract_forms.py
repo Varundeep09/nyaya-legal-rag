@@ -3,9 +3,9 @@ Standalone CLI script to extract all 58 statutory forms from The Second Schedule
 generate individual vector PDF documents, write forms_manifest.json, and synchronize PostgreSQL.
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 import time
 
 # Ensure UTF-8 encoding on Windows console
@@ -21,7 +21,7 @@ sys.path.insert(
 )
 
 from app.core.db import AsyncSessionLocal
-from app.forms.form_extractor import slugify, detect_form_boundaries, extract_form_pdf
+from app.forms.form_extractor import detect_form_boundaries, extract_form_pdf, slugify
 from app.forms.manifest import generate_manifest, sync_forms_to_db
 
 DEFAULT_PDF_PATH = os.path.join("data", "raw", "bns_bare_act_2023.pdf")

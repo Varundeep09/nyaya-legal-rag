@@ -4,18 +4,19 @@ Idempotent delete-and-insert pipeline following the loader.py pattern.
 """
 
 from typing import Tuple
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete
 
-from app.core.models import OffenceClassification
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.logging import logger
+from app.core.models import OffenceClassification
 from app.ingestion.bns_chunker import extract_pages
 from app.ingestion.schedule_parser import (
-    parse_first_schedule,
     DEFAULT_PDF_PATH,
     DEFAULT_SOURCE_URI,
-    SCHEDULE_START_PAGE,
     SCHEDULE_END_PAGE,
+    SCHEDULE_START_PAGE,
+    parse_first_schedule,
 )
 
 

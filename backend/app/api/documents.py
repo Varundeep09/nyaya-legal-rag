@@ -7,28 +7,29 @@ and cascade deletion.
 import os
 import uuid
 from typing import List, Optional
+
+import fitz  # PyMuPDF
+from arq.connections import RedisSettings, create_pool
 from fastapi import (
     APIRouter,
     Depends,
-    UploadFile,
     File,
     HTTPException,
-    status,
     Request,
+    UploadFile,
+    status,
 )
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-import fitz  # PyMuPDF
-from arq.connections import RedisSettings, create_pool
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.logging import logger
-from app.core.models import UserDocument, UserDocumentChunk
-from app.core.session import get_session_id_from_header, ensure_session_exists
 from app.core.limiter import limiter
+from app.core.logging import logger
 from app.core.metrics import DOCUMENT_UPLOADS
+from app.core.models import UserDocument, UserDocumentChunk
+from app.core.session import ensure_session_exists, get_session_id_from_header
 from app.workers.document_worker import process_user_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])

@@ -3,7 +3,8 @@ Unit and integration tests for POST /api/v1/feedback endpoint.
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
 from app.main import app
 
 

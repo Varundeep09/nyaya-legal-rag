@@ -6,8 +6,8 @@ statute section citations ([BNSS s.X], [BNS s.X]) and user document citations ([
 from app.llm.citation_guard import (
     extract_citations,
     extract_doc_citations,
-    validate_citations,
     sanitize_response,
+    validate_citations,
 )
 
 

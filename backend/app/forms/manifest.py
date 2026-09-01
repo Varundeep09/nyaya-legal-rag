@@ -3,14 +3,15 @@ Manifest generator and database synchronization for statutory forms.
 Writes data/forms/forms_manifest.json and updates PostgreSQL statutory_form rows.
 """
 
-import os
 import json
-from typing import List, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+import os
+from typing import Any, Dict, List
 
-from app.core.models import StatutoryForm
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.logging import logger
+from app.core.models import StatutoryForm
 
 
 def generate_manifest(

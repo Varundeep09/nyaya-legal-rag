@@ -6,7 +6,8 @@ and verifiable token usage / finish_reason metadata proofs.
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Dict, Any, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 import google.generativeai as genai
 
 from app.core.config import Settings
@@ -183,8 +184,9 @@ class OllamaProvider(LLMProvider):
         context_chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[str, None]:
         """Streams response tokens from local Ollama instance."""
-        import httpx
         import json
+
+        import httpx
 
         url = f"{self.base_url}/api/generate"
         payload = {

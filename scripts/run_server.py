@@ -1,6 +1,7 @@
-import uvicorn
-import sys
 import os
+import sys
+
+import uvicorn
 
 sys.path.insert(
     0,

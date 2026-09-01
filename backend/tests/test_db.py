@@ -2,8 +2,9 @@
 Async pytest tests for real PostgreSQL database operations and pgvector operations.
 """
 
-import uuid
 import random
+import uuid
+
 import pytest
 from sqlalchemy import select
 

@@ -5,12 +5,13 @@ Ensures session isolation across user uploads and chat histories.
 
 import uuid
 from typing import Optional
+
 from fastapi import Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.models import ChatSession
 from app.core.logging import logger
+from app.core.models import ChatSession
 
 
 def get_session_id_from_header(

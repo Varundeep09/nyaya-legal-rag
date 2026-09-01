@@ -3,6 +3,7 @@ Pytest unit tests for API health check endpoint.
 """
 
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)

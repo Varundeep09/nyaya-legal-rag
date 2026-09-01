@@ -3,15 +3,16 @@ Async module to populate dense vector embeddings for statute chunks in PostgreSQ
 """
 
 import time
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.models import StatuteChunk
 from app.core.logging import logger
+from app.core.models import StatuteChunk
 from app.retrieval.embeddings import (
-    embed_passages,
     check_token_length,
+    embed_passages,
     get_embedding_model,
 )
 

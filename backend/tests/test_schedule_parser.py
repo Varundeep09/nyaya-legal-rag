@@ -3,6 +3,7 @@ Unit and integration tests for First Schedule (BNS Offence Classification) parse
 """
 
 import pytest
+
 from app.ingestion.bns_chunker import extract_pages
 from app.ingestion.schedule_parser import parse_first_schedule
 from app.retrieval.direct_lookup import (

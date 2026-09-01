@@ -4,8 +4,8 @@ Validates credentials, queries the live Gemini API, lists available models,
 and tests generation with the primary flash-tier model.
 """
 
-import sys
 import os
+import sys
 
 # Ensure UTF-8 output on Windows terminal
 sys.stdout.reconfigure(encoding="utf-8")

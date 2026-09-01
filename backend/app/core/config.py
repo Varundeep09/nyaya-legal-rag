@@ -3,6 +3,7 @@ Configuration settings for Nyaya Legal Assistant reading from environment variab
 """
 
 from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

@@ -3,11 +3,11 @@ Bootstrap runner for Nyaya Legal Assistant:
 Waits for database connectivity, then executes statute ingestion, schedule ingestion, and forms extraction in order.
 """
 
-import sys
 import os
-import time
-import subprocess
 import socket
+import subprocess
+import sys
+import time
 
 sys.path.insert(
     0,

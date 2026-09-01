@@ -3,9 +3,10 @@ Unit and integration tests for Prometheus metrics and cost calculations.
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+from httpx import ASGITransport, AsyncClient
+
 from app.core.metrics import calculate_gemini_cost, record_llm_usage
+from app.main import app
 
 
 def test_calculate_gemini_cost():

@@ -7,9 +7,10 @@ prompt injection scanning, and PostgreSQL persistence.
 import os
 import re
 import uuid
-from typing import List, Dict, Any, Optional
-import pdfplumber
+from typing import Any, Dict, List, Optional
+
 import fitz  # PyMuPDF
+import pdfplumber
 from arq.connections import RedisSettings
 from sqlalchemy import select, update
 

@@ -4,23 +4,24 @@ refusal gating, SSE token streaming, citation validation guard, and history pers
 """
 
 import json
-from typing import AsyncGenerator, List, Dict, Any, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.db import AsyncSessionLocal
-from app.core.logging import logger
-from app.core.models import ChatSession, ChatMessage, UserDocument
-from app.core.session import get_session_id_from_header
 from app.core.limiter import limiter
+from app.core.logging import logger
 from app.core.metrics import QUERY_REFUSALS
-from app.retrieval.hybrid_retriever import hybrid_search, search_user_documents
-from app.retrieval.refusal import should_refuse, REFUSAL_MESSAGE
-from app.llm.prompts import build_rag_prompt, NYAYA_SYSTEM_PROMPT
-from app.llm.provider import get_llm_provider
+from app.core.models import ChatMessage, ChatSession, UserDocument
+from app.core.session import get_session_id_from_header
 from app.llm.citation_guard import sanitize_response
+from app.llm.prompts import NYAYA_SYSTEM_PROMPT, build_rag_prompt
+from app.llm.provider import get_llm_provider
+from app.retrieval.hybrid_retriever import hybrid_search, search_user_documents
+from app.retrieval.refusal import REFUSAL_MESSAGE, should_refuse
 
 router = APIRouter(tags=["chat"])
 

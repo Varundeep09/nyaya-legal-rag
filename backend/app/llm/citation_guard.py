@@ -6,7 +6,8 @@ Strips hallucinated citations to prevent fabricating authorities.
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 from app.core.logging import logger
 
 STATUTE_CITATION_PATTERN = re.compile(

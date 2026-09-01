@@ -4,13 +4,14 @@ Extracts all 58 statutory forms, detects boundaries, scrapes titles dynamically
 (zero hardcoding), parses enabling sections, and exports page-perfect vector PDFs.
 """
 
+import hashlib
 import os
 import re
-import hashlib
 import unicodedata
-from typing import List, Dict, Any
-import pdfplumber
+from typing import Any, Dict, List
+
 import fitz  # PyMuPDF
+import pdfplumber
 
 from app.core.logging import logger
 

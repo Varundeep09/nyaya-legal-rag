@@ -4,12 +4,13 @@ Verifies model dimensions, determinism, asymmetric prefix divergence, and L2 nor
 """
 
 import math
+
 from app.retrieval.embeddings import (
-    get_embedding_model,
+    EXPECTED_DIMENSION,
+    check_token_length,
     embed_passages,
     embed_query,
-    check_token_length,
-    EXPECTED_DIMENSION,
+    get_embedding_model,
 )
 
 

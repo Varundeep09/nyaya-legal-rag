@@ -4,6 +4,7 @@ and Reciprocal Rank Fusion against live PostgreSQL + pgvector data.
 """
 
 import pytest
+
 from app.retrieval.direct_lookup import detect_section_intent
 from app.retrieval.hybrid_retriever import hybrid_search, reciprocal_rank_fusion
 

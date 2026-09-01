@@ -7,11 +7,12 @@ Usage:
     python scripts/ingest_bns.py --with-embeddings  # Full pipeline including BGE embeddings
 """
 
-import sys
-import os
 import argparse
 import asyncio
-from sqlalchemy import select, func
+import os
+import sys
+
+from sqlalchemy import func, select
 
 # Ensure standard output doesn't crash on windows console
 if hasattr(sys.stdout, "reconfigure"):
@@ -25,8 +26,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "bac
 
 from app.core.db import AsyncSessionLocal, init_db
 from app.core.models import StatuteChunk
-from app.ingestion.loader import load_statute_chunks_to_db
 from app.ingestion.embed_loader import populate_statute_embeddings
+from app.ingestion.loader import load_statute_chunks_to_db
 
 
 async def run_ingestion(with_embeddings: bool = False):

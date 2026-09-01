@@ -3,8 +3,10 @@ Dense embeddings module for Nyaya Legal Assistant using BAAI/bge-base-en-v1.5.
 Supports asymmetric passage and query embeddings with L2 normalization for pgvector storage.
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 from sentence_transformers import SentenceTransformer
+
 from app.core.logging import logger
 
 MODEL_NAME = "BAAI/bge-base-en-v1.5"

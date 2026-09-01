@@ -6,7 +6,8 @@ Features chapter heading false-positive guards and two-tier clause splitting.
 """
 
 import re
-from typing import List, Dict, Any, Tuple, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 import pdfplumber
 
 # Maximum character threshold for a single chunk before splitting

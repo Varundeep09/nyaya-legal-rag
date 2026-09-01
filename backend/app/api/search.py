@@ -4,7 +4,8 @@ Provides hybrid retrieval and direct section lookup via POST /api/v1/search.
 """
 
 import time
-from typing import Optional, List, Any, Dict
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession

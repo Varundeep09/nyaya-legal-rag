@@ -5,24 +5,25 @@ Supports both statutory procedure chunks (BNSS) and offence classifications (BNS
 """
 
 import uuid
-from typing import List, Dict, Any, Optional, Tuple, Set
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.logging import logger
 from app.core.models import (
-    StatuteChunk,
     OffenceClassification,
+    StatuteChunk,
     UserDocument,
     UserDocumentChunk,
 )
-from app.core.logging import logger
-from app.retrieval.embeddings import embed_query
 from app.retrieval.bm25_index import get_or_build_bm25_index, search_bm25
 from app.retrieval.direct_lookup import (
     detect_act_and_section_intent,
-    fetch_section_directly,
     fetch_bns_offence_directly,
+    fetch_section_directly,
 )
+from app.retrieval.embeddings import embed_query
 
 
 async def dense_search(

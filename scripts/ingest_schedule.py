@@ -7,12 +7,13 @@ Usage:
     python scripts/ingest_schedule.py --with-embeddings  # Full pipeline including BGE embeddings
 """
 
-import sys
-import os
-import time
 import argparse
 import asyncio
-from sqlalchemy import select, func, update
+import os
+import sys
+import time
+
+from sqlalchemy import func, select, update
 
 # Ensure standard output doesn't crash on windows console
 if hasattr(sys.stdout, "reconfigure"):
@@ -25,12 +26,12 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend"))
 
 from app.core.db import AsyncSessionLocal, init_db
-from app.core.models import OffenceClassification
 from app.core.logging import logger
+from app.core.models import OffenceClassification
 from app.ingestion.schedule_loader import load_offence_classification_to_db
 from app.retrieval.embeddings import (
-    embed_passages,
     check_token_length,
+    embed_passages,
 )
 
 

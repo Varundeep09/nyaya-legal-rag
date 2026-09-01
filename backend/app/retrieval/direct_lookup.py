@@ -5,12 +5,13 @@ Supports dual-table routing across BNSS statute chunks and BNS First Schedule of
 """
 
 import re
-from typing import Optional, List, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from typing import Any, Dict, List, Optional
 
-from app.core.models import StatuteChunk, OffenceClassification
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.logging import logger
+from app.core.models import OffenceClassification, StatuteChunk
 
 
 def detect_act_and_section_intent(query: str) -> Optional[Dict[str, str]]:

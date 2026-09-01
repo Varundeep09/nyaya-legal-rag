@@ -5,13 +5,14 @@ Preserves numbers and alphanumeric tokens intact for precise legal cross-referen
 """
 
 import re
-from typing import List, Tuple, Optional
-from rank_bm25 import BM25Okapi
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from typing import List, Optional, Tuple
 
-from app.core.models import StatuteChunk, OffenceClassification
+from rank_bm25 import BM25Okapi
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.logging import logger
+from app.core.models import OffenceClassification, StatuteChunk
 
 # Module-level cache for the BM25 index and chunk ID list
 _CACHED_BM25_INDEX: Optional[BM25Okapi] = None

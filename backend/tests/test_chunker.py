@@ -6,11 +6,12 @@ token limits for definitions, recovery of sections 104/105, and monotonic sectio
 """
 
 import re
+
 from app.ingestion.bns_chunker import (
-    fix_chapter_title_artifact,
     clean_page_text,
     extract_cross_references,
     extract_pages,
+    fix_chapter_title_artifact,
     parse_chapters_and_sections,
 )
 from app.retrieval.embeddings import get_embedding_model

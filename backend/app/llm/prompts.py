@@ -3,7 +3,7 @@ Prompt engineering templates and citation contract system prompts for Nyaya Lega
 Enforces strict citation grounding and prompt-injection defense for user-uploaded documents.
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 NYAYA_SYSTEM_PROMPT = """You are Nyaya, an expert AI Legal Assistant specializing in the Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS), Bharatiya Nyaya Sanhita, 2023 (BNS) First Schedule offences, and user-uploaded legal documents.
 

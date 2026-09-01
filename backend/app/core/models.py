@@ -4,12 +4,12 @@ SQLAlchemy 2.0 declarative database models with pgvector support for Nyaya Legal
 
 import uuid
 from datetime import datetime
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
-from sqlalchemy import String, Text, Boolean, Integer, Float, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):

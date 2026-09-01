@@ -4,7 +4,8 @@ Empirically calibrated to refuse out-of-scope and non-legal queries
 prior to invoking the LLM generation pipeline.
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from app.core.logging import logger
 
 REFUSAL_MESSAGE = (
