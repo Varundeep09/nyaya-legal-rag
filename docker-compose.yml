@@ -46,6 +46,8 @@ services:
       - REDIS_HOST=redis
     volumes:
       - ./data:/app/data
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +74,8 @@ services:
       - REDIS_HOST=redis
     volumes:
       - ./data:/app/data
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

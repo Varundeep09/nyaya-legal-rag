@@ -5,21 +5,23 @@ refusal gating, SSE token streaming, citation validation guard, and history pers
 
 import json
 from typing import AsyncGenerator, List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.core.db import AsyncSessionLocal
 from app.core.logging import logger
 from app.core.models import ChatSession, ChatMessage, UserDocument
+from app.core.session import get_session_id_from_header, ensure_session_exists
+from app.core.limiter import limiter
+from app.core.metrics import QUERY_REFUSALS
 from app.retrieval.hybrid_retriever import hybrid_search, search_user_documents
 from app.retrieval.refusal import should_refuse, REFUSAL_MESSAGE
 from app.llm.prompts import build_rag_prompt, NYAYA_SYSTEM_PROMPT
 from app.llm.provider import get_llm_provider
 from app.llm.citation_guard import sanitize_response
-from app.core.session import get_session_id_from_header
 
 router = APIRouter(tags=["chat"])
 
@@ -103,6 +105,7 @@ async def chat_event_stream(
 
     if not user_doc_has_strong_match and should_refuse(statute_chunks):
         logger.info("Chat query refused: '%s' (session '%s')", message, session_id)
+        QUERY_REFUSALS.inc()
         
         words = REFUSAL_MESSAGE.split(" ")
         for i, word in enumerate(words):
@@ -112,7 +115,7 @@ async def chat_event_stream(
 
         yield f"data: {json.dumps({'event': 'refusal', 'data': True})}\n\n"
         yield f"data: {json.dumps({'event': 'sources', 'data': []})}\n\n"
-        yield f"data: {json.dumps({'event': 'done', 'data': {'session_id': session_id, 'refused': True, 'citations': []}})}\n\n"
+        yield f"data: {json.dumps({'event': 'done', 'data': {'session_id': session_id, 'refused': True, 'citations': [], 'estimated_cost_usd': 0.0}})}\n\n"
 
         await persist_chat_turn(session_id, message, REFUSAL_MESSAGE, [])
         return
@@ -192,7 +195,8 @@ async def chat_event_stream(
             "refused": False,
             "citations": valid_citations,
             "stripped_hallucinations": hallucinated_citations,
-            "model_proof": provider.last_call_metadata
+            "model_proof": provider.last_call_metadata,
+            "estimated_cost_usd": provider.last_call_metadata.get("estimated_cost_usd", 0.0)
         }
     }
     yield f"data: {json.dumps(done_payload)}\n\n"
@@ -202,8 +206,10 @@ async def chat_event_stream(
 
 
 @router.post("/chat")
+@limiter.limit("20/minute")
 async def chat_endpoint(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     header_session_id: str = Depends(get_session_id_from_header)
 ):
     """
@@ -211,11 +217,11 @@ async def chat_endpoint(
     Retrieves legal statute and user document context, streams LLM tokens,
     validates citations, and persists turn history.
     """
-    effective_session_id = request.session_id if request.session_id else header_session_id
-    logger.info("Incoming chat request for session '%s': '%s'", effective_session_id, request.message)
+    effective_session_id = body.session_id if body.session_id else header_session_id
+    logger.info("Incoming chat request for session '%s': '%s'", effective_session_id, body.message)
 
     return StreamingResponse(
-        chat_event_stream(request.message, effective_session_id),
+        chat_event_stream(body.message, effective_session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -92,25 +92,36 @@ class GeminiProvider(LLMProvider):
 
                 # Extract real token usage metadata from response
                 usage_dict = {}
+                prompt_toks = 0
+                cand_toks = 0
+                tot_toks = 0
                 if hasattr(response, "usage_metadata") and response.usage_metadata:
                     u = response.usage_metadata
+                    prompt_toks = getattr(u, "prompt_token_count", 0) or 0
+                    cand_toks = getattr(u, "candidates_token_count", 0) or 0
+                    tot_toks = getattr(u, "total_token_count", 0) or 0
                     usage_dict = {
-                        "prompt_tokens": getattr(u, "prompt_token_count", None),
-                        "candidate_tokens": getattr(u, "candidates_token_count", None),
-                        "total_tokens": getattr(u, "total_token_count", None)
+                        "prompt_tokens": prompt_toks,
+                        "candidate_tokens": cand_toks,
+                        "total_tokens": tot_toks
                     }
+
+                from app.core.metrics import calculate_gemini_cost, record_llm_usage
+                cost_usd = record_llm_usage(self.model_name, prompt_toks, cand_toks)
 
                 self.last_call_metadata = {
                     "provider": "gemini",
                     "model": self.model_name,
                     "is_real_llm": True,
                     "finish_reason": last_finish_reason or "STOP",
-                    "usage": usage_dict
+                    "usage": usage_dict,
+                    "estimated_cost_usd": cost_usd
                 }
                 logger.info(
-                    "REAL GEMINI API CALL PROOF: model=%s | finish_reason=%s | usage=%s",
+                    "REAL GEMINI API CALL PROOF: model=%s | finish_reason=%s | cost=$%.6f | usage=%s",
                     self.model_name,
                     last_finish_reason,
+                    cost_usd,
                     usage_dict
                 )
                 return

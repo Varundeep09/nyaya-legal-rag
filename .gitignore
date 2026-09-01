@@ -43,3 +43,6 @@ eval/results/*.json
 Thumbs.db
 .vscode/
 .idea/
+.coverage
+scratch/
+

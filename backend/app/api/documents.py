@@ -7,7 +7,7 @@ and cascade deletion.
 import os
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header, status, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,8 @@ from app.core.db import get_db
 from app.core.logging import logger
 from app.core.models import UserDocument, UserDocumentChunk
 from app.core.session import get_session_id_from_header, ensure_session_exists
+from app.core.limiter import limiter
+from app.core.metrics import DOCUMENT_UPLOADS
 from app.workers.document_worker import process_user_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -59,7 +61,9 @@ class DocumentListItem(BaseModel):
     response_model=DocumentUploadResponse,
     status_code=status.HTTP_202_ACCEPTED
 )
+@limiter.limit("20/minute")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     session_id: str = Depends(get_session_id_from_header),
     db: AsyncSession = Depends(get_db)
@@ -161,6 +165,7 @@ async def upload_document(
         asyncio.create_task(process_user_document({}, str(doc_uuid), session_id, file_path))
 
     logger.info("Enqueued document processing job '%s' for document '%s'", job_id, doc_uuid)
+    DOCUMENT_UPLOADS.labels(status="success").inc()
     return DocumentUploadResponse(
         document_id=str(doc_uuid),
         job_id=job_id,

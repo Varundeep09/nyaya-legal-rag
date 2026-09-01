@@ -200,13 +200,78 @@ curl.exe -O -J "http://localhost:8000/api/v1/forms/download-all"
 curl.exe -s "http://localhost:8000/api/v1/conversations"
 ```
 
+### 5. Submit User Feedback
+```bash
+curl.exe -s -X POST http://localhost:8000/api/v1/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "session-101", "rating": "up", "comment": "Section 35 arrest conditions were accurately cited."}'
+```
+
+### 6. Prometheus Metrics Endpoint
+```bash
+curl.exe -s http://localhost:8000/api/v1/metrics
+```
+
 ---
 
-## 7. Testing & Evaluation Benchmark
+## 7. Observability, Cost Tracking & Rate Limiting
 
-### Running Unit & Integration Tests (44 Tests)
+### Prometheus Metrics Exposition (`/api/v1/metrics`)
+The system exposes real-time Prometheus metrics across the RAG lifecycle:
+- `nyaya_http_requests_total`: Request counter partitioned by `endpoint`, `method`, and `status_code`.
+- `nyaya_http_request_duration_seconds`: Histogram measuring end-to-end latency buckets.
+- `nyaya_retrieval_duration_seconds` & `nyaya_embedding_duration_seconds`: Vector and BM25 latency histograms.
+- `nyaya_llm_tokens_total`: Total tokens consumed across LLM generations.
+- `nyaya_llm_cost_usd_total`: Total estimated USD monetary cost incurred.
+- `nyaya_query_refusals_total`: Intercepted and refused out-of-domain queries.
+- `nyaya_document_uploads_total`: User case files uploaded and indexed.
+- `nyaya_feedback_ratings_total`: User thumbs-up / thumbs-down ratings recorded.
+- `nyaya_database_healthy` & `nyaya_redis_healthy`: Real-time dependency health gauges (1 = OK, 0 = Error).
+
+### Gemini Flash Cost-per-Query Calculation
+Token usage is tracked per query and converted into real USD cost using official Google Gemini 1.5/2.0 Flash rates:
+- **Prompt / Input Tokens**: `$0.075` per 1,000,000 tokens ($0.000000075 / token)
+- **Candidate / Output Tokens**: `$0.300` per 1,000,000 tokens ($0.000000300 / token)
+
+$$\text{Cost (USD)} = \left(\text{Prompt Tokens} \times \frac{0.075}{10^6}\right) + \left(\text{Candidate Tokens} \times \frac{0.300}{10^6}\right)$$
+
+**Real Example Calculation**:
+For a query retrieving 5 statute passages resulting in **1,877 prompt tokens** and generating **1,027 candidate tokens**:
+$$\text{Cost} = (1877 \times 0.000000075) + (1027 \times 0.000000300) = \$0.0001408 + \$0.0003081 = \$0.0004489 \text{ (~0.045 cents)}$$
+This estimated cost is embedded directly in every chat response's SSE `done` event and aggregated in Prometheus.
+
+### SlowAPI Rate Limiting
+To protect against runaway LLM costs and denial-of-service, strict rate limiting is applied:
+- `POST /api/v1/chat`: **20 requests/minute** per session / IP
+- `POST /api/v1/documents/upload`: **20 requests/minute** per session / IP
+- Rapid bursts exceeding the limit immediately receive `HTTP 429 Too Many Requests`.
+
+---
+
+## 8. Continuous Integration & Security (GitHub Actions CI/CD)
+
+The repository includes an enterprise-grade GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) executed on every push and PR:
+
+1. **`lint-test` Job**:
+   - Python 3.12 environment with full backend dependencies.
+   - Code formatting validation (`black --check backend/`) and linting (`ruff check backend/`).
+   - Pytest suite with code coverage (`pytest backend/tests/ --cov=backend/app --cov-report=term`).
+   - Frontend compilation check (`npm ci && npm run build`).
+2. **`secret-scan` Job**:
+   - Gitleaks action (`gitleaks/gitleaks-action@v2`) scanning commit history for leaked API keys, tokens, or credentials.
+3. **`docker-build` Job**:
+   - Multi-stage Docker build for both backend (`nyaya-api`) and frontend (`nyaya-frontend`).
+   - Images tagged with Git commit SHA and pushed to GitHub Container Registry (GHCR).
+4. **`trivy-scan` Job**:
+   - Aqua Security Trivy vulnerability scanner (`aquasecurity/trivy-action`) auditing the built container images.
+
+---
+
+## 9. Testing & Evaluation Benchmark
+
+### Running Unit & Integration Tests (49 Tests Passing)
 ```bash
-$env:PYTHONPATH="backend"; .\venv\Scripts\python -m pytest backend/tests/ -v
+$env:PYTHONPATH="backend"; .\venv\Scripts\python -m pytest backend/tests/ -v --cov=backend/app --cov-report=term
 ```
 
 ### Running the 28-Query Evaluation Harness
@@ -229,7 +294,7 @@ $env:PYTHONPATH="backend"; .\venv\Scripts\python eval/run_eval.py
 
 ---
 
-## 8. Docker Image Sizes & Optimization
+## 10. Docker Image Sizes & Optimization
 
 By utilizing multi-stage builds and explicitly installing PyTorch with CPU-only wheels (`--extra-index-url https://download.pytorch.org/whl/cpu torch==2.6.0+cpu`), container images remain lean and avoid multi-gigabyte CUDA bloat:
 
@@ -240,7 +305,7 @@ By utilizing multi-stage builds and explicitly installing PyTorch with CPU-only 
 
 ---
 
-## 9. AI Usage Disclosure
+## 11. AI Usage Disclosure
 
 In accordance with transparent engineering principles:
 - **Google Gemini** (`gemini-3.6-flash`) is used at runtime for grounded legal query synthesis, strict citation adherence, and structured response generation.
@@ -248,7 +313,7 @@ In accordance with transparent engineering principles:
 
 ---
 
-## 10. Honest Assessment & Current Limitations
+## 12. Honest Assessment & Current Limitations
 
 1. **Schedule I Tabular Extraction**: While all 531 substantive BNS rows were parsed and indexed into `offence_classification`, tabular text wrap in PDF columns occasionally causes ambiguous boundary splits. These rows are explicitly flagged in the database via `needs_review = true`.
 2. **Adjacent Legal Domains**: Must-refuse calibration effectively gates general knowledge (weather, cookies, US law) at $0.68$, but adjacent non-criminal Indian statutes containing overlapping legal terms (e.g. property partition under Hindu Succession Act at $0.716$) sit near the semantic decision boundary.

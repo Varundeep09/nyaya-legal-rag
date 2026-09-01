@@ -42,7 +42,7 @@ if __name__ == "__main__":
     
     python_bin = sys.executable
     run_step("[2/4] Ingesting BNSS Bare Act (531 sections)...", f'"{python_bin}" -m scripts.ingest_bns --with-embeddings')
-    run_step("[3/4] Ingesting BNS First Schedule (531 rows)...", f'"{python_bin}" -m scripts.ingest_schedule --with-embeddings')
+    run_step("[3/4] Ingesting BNS First Schedule (474 rows)...", f'"{python_bin}" -m scripts.ingest_schedule --with-embeddings')
     run_step("[4/4] Extracting 58 Statutory Vector Forms...", f'"{python_bin}" -m scripts.extract_forms')
     
     print("\n=== Bootstrap Finished Successfully! ===")
