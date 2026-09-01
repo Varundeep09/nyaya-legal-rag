@@ -179,7 +179,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy Vulnerability Scanner on Backend Image
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           image-ref: ghcr.io/${{ steps.repo_name.outputs.REPO }}/backend:${{ github.sha }}
           format: 'table'
@@ -189,7 +189,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Run Trivy Vulnerability Scanner on Frontend Image
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.30.0
         with:
           image-ref: ghcr.io/${{ steps.repo_name.outputs.REPO }}/frontend:${{ github.sha }}
           format: 'table'
