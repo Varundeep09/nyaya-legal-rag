@@ -5,7 +5,10 @@ import { ChatView } from './components/ChatView';
 import { FormsView } from './components/FormsView';
 import { SourceDrawer } from './components/SourceDrawer';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = typeof window !== 'undefined' && window.location.port === '5173'
+  ? 'http://127.0.0.1:8000/api/v1'
+  : '/api/v1';
+
 
 function generateSessionId() {
   return 'sess_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);

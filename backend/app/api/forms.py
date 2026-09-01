@@ -40,23 +40,33 @@ class StatutoryFormOut(BaseModel):
 
 
 @router.get("", response_model=List[StatutoryFormOut])
-async def list_statutory_forms(query: Optional[str] = None):
+async def list_statutory_forms(query: Optional[str] = None, q: Optional[str] = None):
     """
     Returns all 58 statutory forms from The Second Schedule, optionally filtered by title or enabling section.
     """
+    search_term = q if q is not None else query
     async with AsyncSessionLocal() as session:
         stmt = select(StatutoryForm).order_by(StatutoryForm.form_number)
         result = await session.execute(stmt)
         forms = result.scalars().all()
 
-        if query:
-            q_lower = query.strip().lower()
+        if search_term:
+            q_lower = search_term.strip().lower()
             forms = [
                 f for f in forms
-                if q_lower in f.title.lower() or (f.enabling_section and q_lower in f.enabling_section.lower()) or q_lower in f.filename.lower()
+                if q_lower in f.title.lower() or (f.enabling_section and q_lower in f.enabling_section.lower()) or q_lower in f.filename.lower() or str(f.form_number) == q_lower
             ]
 
         return forms
+
+
+@router.get("/search", response_model=List[StatutoryFormOut])
+async def search_statutory_forms(q: Optional[str] = None, query: Optional[str] = None):
+    """
+    Explicit search endpoint for statutory forms by query string (q or query).
+    """
+    return await list_statutory_forms(query=query, q=q)
+
 
 
 @router.get("/download-all")

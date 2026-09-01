@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = typeof window !== 'undefined' && window.location.port === '5173'
+  ? 'http://127.0.0.1:8000/api/v1'
+  : '/api/v1';
+
 
 export function Sidebar({
   sessionId,
