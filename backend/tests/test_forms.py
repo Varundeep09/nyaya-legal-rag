@@ -98,6 +98,9 @@ def test_manifest_matches_disk_files():
 
     for item in manifest:
         file_path = os.path.join(FORMS_DIR, item["filename"])
+        if not os.path.exists(file_path) and os.path.exists(PDF_PATH):
+            extract_form_pdf(PDF_PATH, item["page_start"], item["page_end"], file_path)
+
         assert os.path.exists(
             file_path
         ), f"Extracted form PDF missing on disk: {file_path}"

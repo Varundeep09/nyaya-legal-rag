@@ -17,7 +17,7 @@ from app.llm.prompts import (
     format_chunk_citation_key,
 )
 
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 class LLMProvider(ABC):
@@ -86,60 +86,67 @@ class GeminiProvider(LLMProvider):
         }
 
         if self._is_configured:
-            try:
-                model = genai.GenerativeModel(
-                    model_name=self.model_name, system_instruction=system_prompt
-                )
-                response = await model.generate_content_async(prompt, stream=True)
-                last_finish_reason = None
+            candidate_models = [self.model_name]
+            for alt in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+                if alt not in candidate_models:
+                    candidate_models.append(alt)
 
-                async for chunk in response:
-                    if chunk.candidates:
-                        last_finish_reason = str(chunk.candidates[0].finish_reason)
-                    if chunk.text:
-                        yield chunk.text
+            for active_model in candidate_models:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=active_model, system_instruction=system_prompt
+                    )
+                    response = await model.generate_content_async(prompt, stream=True)
+                    last_finish_reason = None
 
-                # Extract real token usage metadata from response
-                usage_dict = {}
-                prompt_toks = 0
-                cand_toks = 0
-                tot_toks = 0
-                if hasattr(response, "usage_metadata") and response.usage_metadata:
-                    u = response.usage_metadata
-                    prompt_toks = getattr(u, "prompt_token_count", 0) or 0
-                    cand_toks = getattr(u, "candidates_token_count", 0) or 0
-                    tot_toks = getattr(u, "total_token_count", 0) or 0
-                    usage_dict = {
-                        "prompt_tokens": prompt_toks,
-                        "candidate_tokens": cand_toks,
-                        "total_tokens": tot_toks,
+                    async for chunk in response:
+                        if chunk.candidates:
+                            last_finish_reason = str(chunk.candidates[0].finish_reason)
+                        if chunk.text:
+                            yield chunk.text
+
+                    # Extract real token usage metadata from response
+                    usage_dict = {}
+                    prompt_toks = 0
+                    cand_toks = 0
+                    tot_toks = 0
+                    if hasattr(response, "usage_metadata") and response.usage_metadata:
+                        u = response.usage_metadata
+                        prompt_toks = getattr(u, "prompt_token_count", 0) or 0
+                        cand_toks = getattr(u, "candidates_token_count", 0) or 0
+                        tot_toks = getattr(u, "total_token_count", 0) or 0
+                        usage_dict = {
+                            "prompt_tokens": prompt_toks,
+                            "candidate_tokens": cand_toks,
+                            "total_tokens": tot_toks,
+                        }
+
+                    from app.core.metrics import record_llm_usage
+
+                    cost_usd = record_llm_usage(active_model, prompt_toks, cand_toks)
+
+                    self.last_call_metadata = {
+                        "provider": "gemini",
+                        "model": active_model,
+                        "is_real_llm": True,
+                        "finish_reason": last_finish_reason or "STOP",
+                        "usage": usage_dict,
+                        "estimated_cost_usd": cost_usd,
                     }
-
-                from app.core.metrics import record_llm_usage
-
-                cost_usd = record_llm_usage(self.model_name, prompt_toks, cand_toks)
-
-                self.last_call_metadata = {
-                    "provider": "gemini",
-                    "model": self.model_name,
-                    "is_real_llm": True,
-                    "finish_reason": last_finish_reason or "STOP",
-                    "usage": usage_dict,
-                    "estimated_cost_usd": cost_usd,
-                }
-                logger.info(
-                    "REAL GEMINI API CALL PROOF: model=%s | finish_reason=%s | cost=$%.6f | usage=%s",
-                    self.model_name,
-                    last_finish_reason,
-                    cost_usd,
-                    usage_dict,
-                )
-                return
-            except Exception as e:
-                logger.error(
-                    "REAL GEMINI API CALL FAILED: %s. Engaging visibly marked fallback.",
-                    e,
-                )
+                    logger.info(
+                        "REAL GEMINI API CALL PROOF: model=%s | finish_reason=%s | cost=$%.6f | usage=%s",
+                        active_model,
+                        last_finish_reason,
+                        cost_usd,
+                        usage_dict,
+                    )
+                    return
+                except Exception as e:
+                    logger.error(
+                        "REAL GEMINI API CALL FAILED for model '%s': %s.",
+                        active_model,
+                        e,
+                    )
 
         # Explicit fallback path for unconfigured credentials (LOUD & VISIBLE per Part 2)
         logger.warning("FALLBACK TEMPLATE ACTIVE - NOT CALLING REAL GEMINI")
