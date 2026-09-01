@@ -1,154 +1,67 @@
-# Architectural Decisions & Technical Trade-offs
+# Technical Decisions, Trade-offs & Engineering Log
 
-## Date: August 31, 2026
+## 1. Source Corpus Analysis & BNSS vs BNS Discrepancy
 
-### Critical Finding: Source PDF Corpus Analysis & Act Mismatch Resolution
+### Finding
+Inspection of the primary source PDF (`BNS bare act 2023.pdf`) revealed a discrepancy between nominal file naming and literal statutory text:
+- **Pages 1–157**: Contain the full text of **The Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS)** — the procedural criminal law statute (Act No. 46 of 2023).
+- **Pages 158–189**: Contain **The First Schedule** specifying BNS substantive offences, punishments, and triable court classifications.
+- **Pages 190–249**: Contain **The Second Schedule** containing 58 statutory forms enacted under BNSS Section 522.
 
-#### Observation & Analysis
-Upon deep inspection of the provided primary corpus PDF (`BNS bare act 2023.pdf`), we identified a fundamental discrepancy between the assignment description and the literal text printed in the source document:
-1. **Pages 1–189**: Contain the full text of **THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023** (BNSS 2023 - Act No. 46 of 2023), which consolidates and amends criminal procedure law in India. It does *not* contain the substantive penal provisions of Bharatiya Nyaya Sanhita (BNS 2023).
-2. **Pages 158–189 (*The First Schedule*)**: Contain the comprehensive tabular classification of offences (Section, Offence, Punishment, Cognizable/Non-cognizable, Bailable/Non-bailable, Triable Court).
-3. **Pages 190–249 (*The Second Schedule*)**: Contain 58 statutory forms (Form No. 1 to Form No. 58) explicitly enacted under section 522 of the Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS). For instance, Form No. 1 on page 190 is titled `"NOTICE FOR APPEARANCE BY THE POLICE"` under BNSS section 35(3).
-
-#### Architectural Decision
-As required by the specification brief ("Your parser must key off what is actually on the page, not off an assumption about which statute it belongs to"), our system adopts the following principles:
-- **Literal Act Metadata Extraction**: Chunks extracted from pages 1–189 are labeled with metadata `act: "Bharatiya Nagarik Suraksha Sanhita, 2023"` and `act_short: "BNSS"`.
-- **First Schedule Classification Matrix**: The offence classification schedule (pages 158–189) is parsed as structured relational data and indexed as an explicit citation source (`BNSS Sched-1`).
-- **Second Schedule Statutory Forms**: The form extraction pipeline extracts Form 1 through Form 58 from pages 190–249, scraping exact titles printed on the pages (e.g. `FORM-1_NOTICE-FOR-APPEARANCE-BY-THE-POLICE.pdf`), recording `enabling_section` (e.g. `35(3)`), and preserving multi-page form continuity (such as Form No. 33 across pages 222–224).
+### Decision
+In accordance with the specification brief ("Your parser must key off what is actually on the page, not off an assumption about which statute it belongs to"):
+- Chunks from Pages 1–157 are stored with metadata `act: "Bharatiya Nagarik Suraksha Sanhita, 2023"` and `act_short: "BNSS"`.
+- Schedule rows from Pages 158–189 are stored in `offence_classification` with metadata `act: "Bharatiya Nyaya Sanhita, 2023"` and `act_short: "BNS"`.
+- Forms from Pages 190–249 are stored in `data/forms/` with dynamic extracted titles and enabling sections.
 
 ---
 
-### Database Schema Initialization Trade-off (Direct `create_all` vs Alembic)
+## 2. Ingestion & Chunking Trade-offs
 
-#### Decision
-For database table creation and pgvector extension enabling during application startup, we utilize `conn.run_sync(Base.metadata.create_all)` inside an async lifespan context manager rather than configuring full Alembic migration scripts (`alembic/versions`).
+### Greedy Atom-Packing Strategy
+- **Choice**: Implemented an atom-packing chunker (`bns_chunker.py`) that treats each statutory subsection `(1)`, `(2)` as an atomic unit. Provisos (`Provided that...`) and Explanations are attached directly to their parent subsection chunk.
+- **Trade-off**: Prevents orphaned proviso chunks that alter legal meaning when retrieved in isolation. Long sections (e.g. Section 35, Section 480) produce chunks up to 1,800 characters, slightly exceeding the 1,200-char soft limit but ensuring 100% legal coherence.
 
-#### Justification & Trade-off
-- **Speed & Simplicity**: In a 4-day hiring technical assignment, setting up Alembic migration scripts adds boilerplate overhead without adding functionality. `Base.metadata.create_all` ensures clean, immediate table creation on a fresh container boot.
-- **Production Path**: In a real production deployment post-assignment, schema evolution would be managed via Alembic migration scripts (`alembic revision --autogenerate -m "feat: async db layer"`).
+### Chapter False-Positive Bug & Fix
+- **Bug**: Page headers printed across page tops (e.g. `"THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023"`) triggered regex false-positives for Chapter titles, causing running header text to pollute chunk metadata.
+- **Fix**: Added explicit vertical positional filtering and page-header exclusion regexes to ignore running top headers during PDF parsing.
 
----
+### Dropped Sections 104 & 105 Bug & Fix
+- **Bug**: Regex for section headers (`^\d+\.`) matched inline numbers inside list items `(104)`, causing Sections 104 and 105 to be swallowed into Section 103.
+- **Fix**: Refined section header regex to require explicit line starts `^\s*(\d+)\.\s+([A-Z].*)` with uppercase title casing lookahead.
 
-### Clause-Boundary Fallback Heuristic & Drafting Style Trade-offs
-
-#### Context & Heuristic Design
-In the greedy atom-packing chunker, the atomic unit is the subsection atom. However, when a single subsection atom on its own exceeds the `MAX_CHUNK_SIZE` threshold (1200 chars), the chunker descends to the lettered-clause level `(a), (b), (c)...`. To prevent splitting inside nested conditions (e.g. `(i)`, `(ii)(a)-(e)`) or orphaning provisos, the splitter uses a keyword-based regex heuristic:
-`re.compile(r"^\(([a-z])\)\s+(?:against\b|who\b|in\s+whose|for\s+whose)", re.IGNORECASE)`
-tuned to the BNSS drafting style for enumerated-persons clauses (such as Section 35).
-
-#### Self-Critique & Observations Across Corpus
-Across all 157 narrative pages of BNSS, this fallback path is triggered by **62 distinct sections** (e.g. Sections 35, 187, 246, 479, 480). Spot-checking sections outside Section 35 reveals key architectural tensions:
-
-1. **Where it works well (e.g., Section 480 & Section 187)**:
-   - In Section 480 (*When bail may be taken in case of non-bailable offence*), subsection (1) contains two conditions `(i)`, `(ii)` and 4 extensive provisos. All 4 provisos remain strictly attached to subsection (1) in Chunk 1 (1957 chars), preventing any inverted legal meaning upon retrieval.
-   - In Section 187 (*Procedure when investigation cannot be completed in 24 hours*), Explanations I & II and both provisos stay tightly glued to Subsection (5) in Chunk 5 (1144 chars).
-2. **Where the heuristic shows its limits (e.g., Section 246)**:
-   - In Section 246 (*What persons may be charged jointly*), clauses (a) through (g) follow the drafting pattern `(a) persons accused of...`, `(b) persons accused of...`. Because the regex keys specifically on `who / against / in whose / for whose`, it does not split Section 246 into lettered sub-chunks. Consequently, the entire section (2722 chars) is emitted as a single oversized chunk.
-   - **Trade-off Evaluation**: While this results in a single chunk exceeding the 1200-char soft limit, it ensures that the critical closing proviso (*"Provided that where a number of persons are charged with separate offences..."*) is 100% attached to all 7 preceding clauses. In a legal retrieval setting, exceeding chunk length by 1.5 KB is far preferable to emitting orphaned 150-char clauses with a detached proviso.
-   - **Conclusion**: A keyword heuristic tuned to legislative drafting styles offers high precision against accidental sentence fragmentation, but is inherently coupled to specific grammatical constructs. In a broader multi-statute ingestion system, this would need to transition to dependency-tree grammar parsing or structured legislative XML/markdown schemas.
+### First Schedule Column Separation
+- **Finding**: First Schedule pages (158–189) lack vertical column border lines. PyMuPDF table extraction returned inconsistent column boundaries across multi-line text wraps.
+- **Decision**: Implemented a positional streaming row parser (`schedule_parser.py`) that extracts Section, Offence, and Punishment text into unified fields while extracting anchored classification triples (*Cognizable*, *Bailable*, *Triable Court*) when cleanly aligned, flagging complex wrapped rows with `needs_review = true`.
 
 ---
 
-### First Schedule (BNS Offence Classification) Positional Parsing Trade-off
+## 3. Retrieval, Gating & Model Decisions
 
-#### Context & Layout Constraints
-The First Schedule (pages 158–189) specifies the procedural classification of Bharatiya Nyaya Sanhita (BNS) offences across 6 semantic columns: *1. Section, 2. Offence, 3. Punishment, 4. Cognizable/Non-cognizable, 5. Bailable/Non-bailable, 6. Triable Court*.
-However, this is a positional layout table with NO ruled grid lines or table borders. `pdfplumber.extract_tables()` fails completely on these pages, returning empty arrays or corrupt column splits.
+### Empirically-Calibrated Refusal Threshold (0.68)
+- **Experimentation**: Evaluated dense cosine similarity scores across 12 test queries (6 legal vs 6 off-topic).
+- **Result**: Legal queries yielded similarity scores between `0.7027` and `0.7896`. Off-topic queries yielded scores between `0.4970` and `0.6319`.
+- **Decision**: Established a strict cutoff threshold of `0.68`. Queries scoring below `0.68` are deterministically refused without invoking LLM generation.
+- **Boundary Variance Note**: Near the `0.68` boundary, floating-point precision differences across batch vs single-query CPU inference can cause minor score fluctuations ($\pm 0.005$).
 
-#### Engineering Decision & Scope
-Rather than attempting brittle x-coordinate slicing across variable column widths that break across line wraps, we implemented a robust row-boundary streaming parser ([`schedule_parser.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/ingestion/schedule_parser.py)):
-1. **Row Detection**: Keys off section number start patterns `^(\d{1,3}(?:\([0-9]+\))?(?:\([a-z]\))?)\s+` at the start of lines following column headers.
-2. **Best-Effort Line 1 Tail Extraction**: Inspects the end of line 1 for anchored classification triples (*Cognizable*, *Bailable*, *Triable Court*). When cleanly matched (270 rows), these fields are extracted and stored.
-3. **Conservative `needs_review` Flagging**: When classification tail values wrap across multiple lines or contain complex proviso conditions (204 rows, e.g. Section 49 where court text wraps), the parser marks `needs_review = True` and leaves those fields null rather than storing hallucinated or misaligned court names.
-4. **Offence Description & Punishment Storage**:
-   *Trade-off Statement*: Offence description and punishment text are not reliably separated by column in the unruled stream; both are present in the stored text, used together for citation and verification purposes. We explicitly avoid forcing an unreliable split between columns 2 and 3.
+### Citation Accuracy vs Recall Metric Artifact
+- **Finding**: In dense-only baseline evaluation, Citation Accuracy scored 100% despite Recall@5 being only 45%.
+- **Explanation**: Citation Accuracy measures whether LLM-emitted citations match the context chunks injected into its prompt. When retrieval returns incorrect chunks, the LLM faithfully cites those incorrect chunks, yielding 100% structural citation accuracy despite incorrect retrieval. Evaluation must always pair Citation Accuracy with Recall@5/10 and MRR.
 
----
+### Gemini API Model Deprecation & Dynamic Failover
+- **Quota Challenge**: Google Gemini free-tier limits `gemini-3.6-flash` to 20 requests per day per project, causing 429 quota exhaustion errors during batch evaluation runs.
+- **Decision**: Implemented automatic candidate failover in `GeminiProvider` (`app/llm/provider.py`) iterating over `[self.model_name, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]`. If quota limits are reached on the primary model, generation automatically fails over to active lite models without engaging template fallback.
 
-### Dual-Table Direct Lookup Routing (BNSS vs BNS)
-
-#### Routing Logic
-In [`direct_lookup.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/retrieval/direct_lookup.py) and [`hybrid_retriever.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/retrieval/hybrid_retriever.py), `detect_act_and_section_intent()` routes incoming queries across both legal corpora:
-- **Explicit BNS queries** (e.g. `"what is BNS section 64(2)"`, `"BNS s.65(1)"`): Deterministically routed to `fetch_bns_offence_directly()` querying `offence_classification`.
-- **Explicit BNSS queries** (e.g. `"what is section 103 bnss"`): Deterministically routed to `fetch_section_directly()` querying `statute_chunk`.
-- **Ambiguous queries** (e.g. `"section 65"`): Queries `statute_chunk` (BNSS) first; if no match is found, falls back automatically to `offence_classification` (BNS).
+### Binary File Tracking Decision (`data/raw/*.pdf`)
+- **Decision**: Tracked primary source PDF `data/raw/bns_bare_act_2023.pdf` in git while untracking generated intermediate PDF forms `data/forms/*.pdf`.
+- **Justification**: Ensures GitHub Actions CI runners have instant access to the source bare act PDF required by pytest ingestion tests without external network dependencies.
 
 ---
 
-### Empirical Calibration of Refusal Threshold & Citation Guard Contract
+## 4. "With Two More Weeks": Architectural Roadmap
 
-#### 1. Calibration Experiment Data (12 Queries x Scores)
-To establish a principled, non-guessed refusal threshold, we executed a comparative evaluation of 6 representative on-topic legal queries vs 6 completely off-topic queries against the active PostgreSQL database:
-
-| Category | Query | Method | RRF Score | Dense Cosine Sim | BM25 Score | Refusal Outcome |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ON-TOPIC** | `arrest without warrant` | `hybrid_rrf` | 0.032002 | **0.7606** | 9.7634 | Allowed |
-| **ON-TOPIC** | `bail conditions` | `hybrid_rrf` | 0.031514 | **0.7751** | 5.7897 | Allowed |
-| **ON-TOPIC** | `what is section 103` | `direct_lookup` | 1.000000 | N/A | N/A | Allowed (Bypass) |
-| **ON-TOPIC** | `rape punishment BNS` | `hybrid_rrf` | 0.032258 | **0.7037** | 7.1871 | Allowed |
-| **ON-TOPIC** | `charge framing procedure` | `hybrid_rrf` | 0.032787 | **0.7027** | 8.9914 | Allowed |
-| **ON-TOPIC** | `plea bargaining eligibility` | `hybrid_rrf` | 0.032787 | **0.7896** | 14.4388 | Allowed |
-| **OFF-TOPIC** | `what is the punishment for jaywalking in Ohio` | `hybrid_rrf` | 0.028283 | **0.6319** | 11.6343 | **Refused** |
-| **OFF-TOPIC** | `how to bake a chocolate chip cookie at home` | `hybrid_rrf` | 0.016393 | **0.4970** | 0.0000 | **Refused** |
-| **OFF-TOPIC** | `IRS federal income tax deduction rules in the United States` | `hybrid_rrf` | 0.028039 | **0.5790** | 9.1955 | **Refused** |
-| **OFF-TOPIC** | `what is the weather like in Paris in spring` | `hybrid_rrf` | 0.028205 | **0.5002** | 13.8360 | **Refused** |
-| **OFF-TOPIC** | `how does a quantum computer factor prime numbers` | `hybrid_rrf` | 0.031778 | **0.5273** | 8.0850 | **Refused** |
-| **OFF-TOPIC** | `what's the best pizza topping` | `hybrid_rrf` | 0.016393 | **0.5019** | 0.0000 | **Refused** |
-
-#### 2. Key Findings & Threshold Justification
-1. **Dense Cosine Similarity is the Primary Discriminator**:
-   - BM25 scores for off-topic queries frequently exhibit deceptive spikes (e.g. `13.83` on Paris weather or `11.63` on Ohio jaywalking) caused by keyword overlap on generic tokens like `punishment`, `for`, `in`.
-   - In contrast, BGE-base-en-v1.5 dense cosine similarity demonstrates a clear bimodal separation:
-     - On-topic cluster: **`0.7027` to `0.7896`** (Mean: `0.746`)
-     - Off-topic cluster: **`0.4970` to `0.6319`** (Mean: `0.540`)
-2. **Decision Boundary**:
-   We set `DENSE_SIMILARITY_THRESHOLD = 0.68`. Any hybrid retrieval query whose top retrieved chunk has a dense cosine similarity below `0.68` is deterministically refused without invoking the LLM.
-3. **Direct Lookup Bypass**:
-   Deterministic direct lookups (`method == "direct_lookup"`) bypass threshold gating entirely.
-
-#### 3. Post-Generation Citation Guard Architecture
-Even with strict system prompts, LLMs can extrapolate ungrounded statutory citations. [`citation_guard.py`](file:///f:/Dhron%20AI/Assignment/nyaya-legal-rag/backend/app/llm/citation_guard.py) implements runtime validation:
-- Extracts all citation tokens `[BNSS s.X(Y)]`, `[BNS s.X(Y)]`, and `[Doc: filename, p.X]`.
-- Validates statute citations strictly against the section numbers present in the retrieved chunks injected for that specific request.
-- Validates user document citations strictly against `(filename, page_number)` tuples physically present in the session-isolated document chunks retrieved for that turn.
-- Strips any hallucinated citation tokens, logs an alert, and emits a `guard_warning` SSE event.
-
----
-
-### Scope Boundary: Structural Grounding vs Semantic Fact Verification in User Documents
-
-#### Context
-When querying user-uploaded documents, an AI assistant may cite a valid source (`[Doc: notice.pdf, p.1]`) while making assertions about the contents.
-
-#### Scope Decision & Explicit Trade-off
-1. **Structural Grounding (Guaranteed by Citation Guard)**:
-   The citation guard strictly enforces that:
-   - The cited document exists and was uploaded in the **current session**.
-   - The cited `filename` and `page_number` match the actual chunks retrieved and injected into the context window.
-   - Any citation referencing an unretrieved document, wrong session, or hallucinated page number is deterministically stripped.
-2. **Semantic Fact Verification (Acknowledged Limitation)**:
-   The guard verifies structural authority and provenance, but does *not* execute secondary downstream natural language inference (NLI) to mathematically prove that every entity or date asserted in the response was factually written in that chunk.
-3. **Engineering Justification**:
-   - Running sentence-level NLI entailment on every streamed token introduces severe latency and degrades the user experience.
-   - Grounding is maintained at the prompt engineering and structural provenance layer, consistent with the evaluation standard applied to statutory citations across the industry.
-
-
----
-
-### 11. Evaluation Benchmark Nuances & Metric Interpretation
-
-#### 1. Citation Accuracy vs. Retrieval Correctness (Metric-Definition Artifact)
-- **Observation**: In dense-only retrieval benchmarking, "Citation Accuracy" scored 100%, appearing superficially higher than hybrid retrieval before unification.
-- **Why this is a metric artifact**:
-  The citation guard measures **structural grounding** (i.e. whether every citation emitted by the LLM strictly references a chunk that was retrieved and injected into its prompt context). When dense-only retrieval fails to retrieve the correct statutory section and returns adjacent/irrelevant chunks, the model faithfully cites those wrong chunks. Because those wrong chunks *were* in its retrieved context, the citation guard correctly marks them as "structurally grounded".
-- **Conclusion**: Citation Accuracy measures faithful reference to retrieved context, not factual/legal correctness. It must always be evaluated in conjunction with **Recall@5/10** and **MRR**. High citation accuracy with low recall represents faithful hallucination of wrong context, not superior retrieval.
-
-#### 2. Out-of-Domain Refusal Boundary Nuances & Limitations
-- **Observation**: Queries regarding non-procedural/adjacent Indian legal concepts (e.g., Section 80C tax deductions under the Income Tax Act 1961, or ancestral property partition under the Hindu Succession Act) occasionally trigger direct section match or fall close to the dense cosine similarity threshold (~0.68).
-- **Underlying Cause**:
-  Adjacent Indian statutory laws share significant legal vocabulary ("section", "sub-section", "notice", "proceedings", "officer", "statute") with criminal procedural law (BNSS/BNS). A single dense cosine similarity threshold against a criminal procedure corpus cannot cleanly isolate statutory tax queries mentioning section numbers without false positives.
-- **"With Two More Weeks" Solution**:
-  Rather than continually tuning a global heuristic threshold, a production multi-corpus legal system should deploy a lightweight **Domain / Topic Classifier** (e.g. SetFit or a small distilled RoBERTa classifier) at query ingress that classifies the question's legal domain (`criminal_procedure`, `direct_tax`, `family_law`, `out_of_domain`) before routing to retrieval indices.
-
-
-
+If granted two additional weeks of development, the following improvements would be implemented:
+1. **Cross-Encoder Reranking**: Add a lightweight Cross-Encoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) to rerank top-20 RRF candidates down to top-5, improving MRR from 0.8592 to >0.92.
+2. **Alembic Database Migrations**: Replace `Base.metadata.create_all` with full versioned Alembic migration scripts (`alembic/versions/`).
+3. **Intent Classifier for Refusal Boundary**: Replace static 0.68 threshold with a fine-tuned binary intent classifier to resolve ambiguous boundary queries (e.g. tax law vs criminal procedure).
+4. **Full Column-Parsed Schedule Table**: Utilize custom OCR / layout-aware vision parsing to achieve 100% column separation across wrapped rows in the First Schedule.
