@@ -24,8 +24,8 @@ frontend/.vite/
 
 # Data artifacts & PDFs (Keep directory structure via .gitkeep)
 data/uploads/*
-data/forms/*.pdf
 !data/raw/bns_bare_act_2023.pdf
+!data/forms/*.pdf
 !data/forms/forms_manifest.json
 !data/raw/.gitkeep
 !data/uploads/.gitkeep
