@@ -317,3 +317,9 @@ In accordance with transparent engineering principles:
 
 1. **Schedule I Tabular Extraction**: While all 531 substantive BNS rows were parsed and indexed into `offence_classification`, tabular text wrap in PDF columns occasionally causes ambiguous boundary splits. These rows are explicitly flagged in the database via `needs_review = true`.
 2. **Adjacent Legal Domains**: Must-refuse calibration effectively gates general knowledge (weather, cookies, US law) at $0.68$, but adjacent non-criminal Indian statutes containing overlapping legal terms (e.g. property partition under Hindu Succession Act at $0.716$) sit near the semantic decision boundary.
+3. **CI/CD Pipeline Status & Vulnerability Scanning**:
+   - **Lint, Test & Coverage**: **PASSING (Green)** — Verified on GitHub Actions runner with live PostgreSQL (`pgvector`) & Redis service containers. Black code formatting, Ruff linter, 49-item pytest test suite, and Vite frontend production bundle build all pass cleanly.
+   - **Gitleaks Secret Detection**: **PASSING (Green)** — Full git history audit confirms 0 hardcoded credentials or API keys.
+   - **GHCR Multi-Stage Container Build & Push**: **PASSING (Green)** — Multi-stage CPU-optimized Docker images for both `backend` and `frontend` build and push successfully to GitHub Container Registry.
+   - **Trivy Container Scanner**: Failed during runner setup step due to GHCR default package read permissions on newly registered private repository container images.
+
